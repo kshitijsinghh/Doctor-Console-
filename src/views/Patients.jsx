@@ -63,7 +63,7 @@ export default function Patients({ allPatients, outstandingTotal, onOpenPatient 
           <h2 style={{ fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: 22, color: '#0e3b39' }}>Patients</h2>
           <p style={{ color: '#5c7a76', fontSize: 14.5, marginTop: 2 }}>All registered patients, most recent visit first.</p>
         </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        {!isMobile && <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: '#5c7a76', fontWeight: 600 }}>
             From
             <input type="date" value={patFrom} onChange={(e) => setPatFrom(e.target.value)}
@@ -78,7 +78,7 @@ export default function Patients({ allPatients, outstandingTotal, onOpenPatient 
             style={{ padding: '9px 13px', borderRadius: 9, border: '1px solid #d6e7e3', background: '#fff', color: '#5c7a76', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
             Clear
           </button>
-        </div>
+        </div>}
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: 12, marginBottom: 16 }}>
