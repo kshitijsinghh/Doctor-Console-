@@ -36,7 +36,7 @@ var VISITS_HEADERS = [
   'chiefDescription', 'chiefComplaint', 'treatmentGroup', 'treatment', 'toothNumber', 'treatmentOther',
   'treatmentCost', 'amountPaid', 'balanceDue',
   'paymentMode', 'paymentStatus', 'treatmentStage', 'googleReviewTaken',
-  'nextAppointment', 'nextAppointmentTime', 'comments',
+  'nextAppointment', 'nextAppointmentTime', 'comments', 'calendarEventId',
 ];
 
 function doGet(e) {
@@ -86,9 +86,21 @@ function ensureSheet_(name, headers) {
   return sh;
 }
 
+function ensureColumns_(sh, headers) {
+  var existing = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+  var set = {};
+  existing.forEach(function (h) { set[String(h).trim()] = true; });
+  for (var i = 0; i < headers.length; i++) {
+    if (!set[headers[i]]) {
+      sh.getRange(1, sh.getLastColumn() + 1).setValue(headers[i]);
+    }
+  }
+}
+
 function ensureAllSheets_() {
   ensureSheet_(PATIENTS_SHEET, PATIENTS_HEADERS);
-  ensureSheet_(VISITS_SHEET, VISITS_HEADERS);
+  var visitsSh = ensureSheet_(VISITS_SHEET, VISITS_HEADERS);
+  ensureColumns_(visitsSh, VISITS_HEADERS);
   var settings = ensureSheet_(SETTINGS_SHEET, ['key', 'value']);
   var map = settingsMap_(settings);
   if (!('seq' in map)) settings.appendRow(['seq', 0]);
@@ -208,6 +220,65 @@ function readSnapshot_() {
 
 function formatDate_(d) {
   return Utilities.formatDate(d, Session.getScriptTimeZone() || 'Etc/UTC', 'yyyy-MM-dd');
+}
+
+// ---------- Google Calendar integration ----------
+
+function getClinicCalendar_() {
+  var settingsSh = ensureSheet_(SETTINGS_SHEET, ['key', 'value']);
+  var settings = settingsMap_(settingsSh);
+  var calId = settings.calendarId || '';
+  if (calId) {
+    try {
+      var cal = CalendarApp.getCalendarById(calId);
+      if (cal) return cal;
+    } catch (e) {}
+  }
+  var cal = CalendarApp.createCalendar('PatientPad Appointments');
+  setSetting_(settingsSh, 'calendarId', cal.getId());
+  return cal;
+}
+
+function syncCalendarEvent_(visitId, patientName, nextAppt, nextApptTime, treatment, existingEventId) {
+  var settingsSh = ensureSheet_(SETTINGS_SHEET, ['key', 'value']);
+  var settings = settingsMap_(settingsSh);
+  var cal = getClinicCalendar_();
+  var guests = (settings.allowedEmails || '').split(',').map(function (e) { return e.trim(); }).filter(Boolean);
+
+  if (!nextAppt) {
+    if (existingEventId) {
+      try { var ev = cal.getEventById(existingEventId); if (ev) ev.deleteEvent(); } catch (e) {}
+    }
+    return '';
+  }
+
+  var h = 9, m = 0;
+  if (nextApptTime) {
+    var p = nextApptTime.split(':');
+    h = parseInt(p[0], 10) || 9;
+    m = parseInt(p[1], 10) || 0;
+  }
+  var start = new Date(nextAppt + 'T' + ('0' + h).slice(-2) + ':' + ('0' + m).slice(-2) + ':00');
+  var end = new Date(start.getTime() + 30 * 60000);
+  var title = patientName + ' — ' + (treatment || 'Appointment');
+  var desc = 'Visit: ' + visitId + '\nPatient: ' + patientName + '\nTreatment: ' + (treatment || '—');
+
+  if (existingEventId) {
+    try {
+      var ev = cal.getEventById(existingEventId);
+      if (ev) {
+        ev.setTitle(title);
+        ev.setDescription(desc);
+        ev.setTime(start, end);
+        return existingEventId;
+      }
+    } catch (e) {}
+  }
+
+  var opts = { description: desc };
+  if (guests.length) { opts.guests = guests.join(','); opts.sendInvites = true; }
+  var ev = cal.createEvent(title, start, end, opts);
+  return ev.getId();
 }
 
 // ---------- actions ----------
@@ -350,6 +421,35 @@ function action_saveClinical_(body) {
       var cell = visitsSh.getRange(r, vData.idx[key] + 1);
       if (key === 'toothNumber' || key === 'nextAppointmentTime') cell.setNumberFormat('@');
       cell.setValue(fields[key]);
+    }
+
+    try {
+      var shouldHaveEvent = fields.treatmentStage === 'In Progress' && fields.nextAppointment;
+      var existingEventId = (vData.idx.calendarEventId !== undefined)
+        ? String(vData.rows[targetRow][vData.idx.calendarEventId] || '') : '';
+
+      if (shouldHaveEvent || existingEventId) {
+        var patientsSh = ensureSheet_(PATIENTS_SHEET, PATIENTS_HEADERS);
+        var pData = sheetRows_(patientsSh);
+        var patientName = '';
+        for (var pi = 0; pi < pData.rows.length; pi++) {
+          if (pData.rows[pi][pData.idx.patientId] === patientId) {
+            patientName = pData.rows[pi][pData.idx.name] || '';
+            break;
+          }
+        }
+        var newEventId = syncCalendarEvent_(
+          visitId, patientName,
+          shouldHaveEvent ? fields.nextAppointment : '',
+          shouldHaveEvent ? fields.nextAppointmentTime : '',
+          fields.treatment, existingEventId
+        );
+        if (vData.idx.calendarEventId !== undefined) {
+          visitsSh.getRange(r, vData.idx.calendarEventId + 1).setValue(newEventId);
+        }
+      }
+    } catch (calErr) {
+      // Calendar sync is non-critical — don't fail the save
     }
 
     return readSnapshot_();
