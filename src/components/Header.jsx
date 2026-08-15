@@ -1,14 +1,14 @@
 import { useState, useEffect } from 'react';
 import { TOUCH_BTN } from '../styles';
 
-export default function Header({ view, onGoDash, onGoAppts, user, onLogout }) {
+export default function Header({ view, onGoDash, onGoAppts, onGoPatients, user, onLogout }) {
   const [isMobile, setIsMobile] = useState(window.innerWidth < 760);
   const [accountOpen, setAccountOpen] = useState(false);
 
   useEffect(() => {
     const onResize = () => {
       const m = window.innerWidth < 760;
-      setIsMobile((prev) => { if (prev !== m) return m; return prev; });
+      setIsMobile((prev) => (prev !== m ? m : prev));
     };
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
@@ -16,6 +16,7 @@ export default function Header({ view, onGoDash, onGoAppts, user, onLogout }) {
 
   const userInitial = user ? (user.name || user.email || '?')[0].toUpperCase() : '?';
   const hasPicture = user && user.picture;
+  const isPatView = view === 'patients' || view === 'patientDetail';
 
   const avatarBtn = (size, ml) => (
     <button
@@ -30,10 +31,7 @@ export default function Header({ view, onGoDash, onGoAppts, user, onLogout }) {
       }}
     >
       {hasPicture ? (
-        <img
-          src={user.picture} alt="" referrerPolicy="no-referrer"
-          style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-        />
+        <img src={user.picture} alt="" referrerPolicy="no-referrer" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
       ) : (
         <span style={{
           width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -61,7 +59,6 @@ export default function Header({ view, onGoDash, onGoAppts, user, onLogout }) {
   if (isMobile) {
     return (
       <header style={{ background: '#0e3b39', color: '#fff', position: 'sticky', top: 0, zIndex: 40 }}>
-        {/* Row 1: logo + avatar */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '10px 14px 8px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 9, minWidth: 0 }}>
             <span style={{
@@ -84,28 +81,17 @@ export default function Header({ view, onGoDash, onGoAppts, user, onLogout }) {
           </div>
           {avatarBtn(34)}
         </div>
-        {/* Row 2: segmented tabs */}
         <div style={{ display: 'flex', gap: 6, padding: '0 14px 10px' }}>
-          <button
-            onClick={onGoDash}
-            style={{
-              ...TOUCH_BTN, flex: 1, padding: 11, borderRadius: 10, border: 0, cursor: 'pointer',
-              fontWeight: 700, fontSize: 14.5, background: view === 'dashboard' ? '#12a094' : 'rgba(255,255,255,.12)', color: '#fff',
-            }}
-          >
-            Dashboard
+          <button onClick={onGoDash} style={{ ...TOUCH_BTN, flex: 1, padding: '11px 6px', borderRadius: 10, border: 0, cursor: 'pointer', fontWeight: 700, fontSize: 14, background: view === 'dashboard' ? '#12a094' : 'rgba(255,255,255,.12)', color: '#fff' }}>
+            Visits
           </button>
-          <button
-            onClick={onGoAppts}
-            style={{
-              ...TOUCH_BTN, flex: 1, padding: 11, borderRadius: 10, border: 0, cursor: 'pointer',
-              fontWeight: 700, fontSize: 14.5, background: view === 'appointments' ? '#12a094' : 'rgba(255,255,255,.12)', color: '#fff',
-            }}
-          >
+          <button onClick={onGoAppts} style={{ ...TOUCH_BTN, flex: 1, padding: '11px 6px', borderRadius: 10, border: 0, cursor: 'pointer', fontWeight: 700, fontSize: 14, background: view === 'appointments' ? '#12a094' : 'rgba(255,255,255,.12)', color: '#fff' }}>
             Appointments
           </button>
+          <button onClick={onGoPatients} style={{ ...TOUCH_BTN, flex: 1, padding: '11px 6px', borderRadius: 10, border: 0, cursor: 'pointer', fontWeight: 700, fontSize: 14, background: isPatView ? '#12a094' : 'rgba(255,255,255,.12)', color: '#fff' }}>
+            Patients
+          </button>
         </div>
-        {/* Sign out dropdown */}
         {accountOpen && (
           <div style={{ padding: '0 14px 12px', display: 'flex', justifyContent: 'flex-end' }}>
             {signOutBtn}
@@ -115,7 +101,6 @@ export default function Header({ view, onGoDash, onGoAppts, user, onLogout }) {
     );
   }
 
-  // Desktop header
   return (
     <header style={{ background: '#0e3b39', color: '#fff', position: 'sticky', top: 0, zIndex: 40 }}>
       <div style={{
@@ -147,23 +132,14 @@ export default function Header({ view, onGoDash, onGoAppts, user, onLogout }) {
           </span>
         </div>
         <nav style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
-          <button
-            onClick={onGoDash}
-            style={{
-              ...TOUCH_BTN, padding: '9px 15px', borderRadius: 9, border: 0, cursor: 'pointer',
-              fontWeight: 700, fontSize: 13.5, background: view === 'dashboard' ? '#12a094' : 'rgba(255,255,255,.12)', color: '#fff',
-            }}
-          >
-            Dashboard
+          <button onClick={onGoDash} style={{ ...TOUCH_BTN, padding: '9px 15px', borderRadius: 9, border: 0, cursor: 'pointer', fontWeight: 700, fontSize: 13.5, background: view === 'dashboard' ? '#12a094' : 'rgba(255,255,255,.12)', color: '#fff' }}>
+            Visits
           </button>
-          <button
-            onClick={onGoAppts}
-            style={{
-              ...TOUCH_BTN, padding: '9px 15px', borderRadius: 9, border: 0, cursor: 'pointer',
-              fontWeight: 700, fontSize: 13.5, background: view === 'appointments' ? '#12a094' : 'rgba(255,255,255,.12)', color: '#fff',
-            }}
-          >
+          <button onClick={onGoAppts} style={{ ...TOUCH_BTN, padding: '9px 15px', borderRadius: 9, border: 0, cursor: 'pointer', fontWeight: 700, fontSize: 13.5, background: view === 'appointments' ? '#12a094' : 'rgba(255,255,255,.12)', color: '#fff' }}>
             Appointments
+          </button>
+          <button onClick={onGoPatients} style={{ ...TOUCH_BTN, padding: '9px 15px', borderRadius: 9, border: 0, cursor: 'pointer', fontWeight: 700, fontSize: 13.5, background: isPatView ? '#12a094' : 'rgba(255,255,255,.12)', color: '#fff' }}>
+            Patients
           </button>
           {avatarBtn(36, 4)}
           {accountOpen && signOutBtn}
