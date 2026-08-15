@@ -30,11 +30,12 @@ function MultiSelect({ value, options, onChange, placeholder, disabled }) {
         style={{
           ...fieldStyle, display: 'flex', flexWrap: 'wrap', gap: 6,
           cursor: disabled ? 'default' : 'pointer',
-          alignItems: 'center', minHeight: 44,
+          alignItems: 'center', minHeight: 44, paddingRight: 32,
           opacity: disabled ? 0.7 : 1, background: disabled ? '#f0f4f3' : fieldStyle.background,
+          position: 'relative',
         }}
       >
-        {selected.length === 0 && <span style={{ color: '#98b0ab' }}>{placeholder || 'Select…'}</span>}
+        {selected.length === 0 && <span style={{ color: '#98b0ab', flex: 1 }}>{placeholder || 'Select…'}</span>}
         {selected.map((s) => (
           <span
             key={s}
@@ -51,6 +52,11 @@ function MultiSelect({ value, options, onChange, placeholder, disabled }) {
             >&times;</span>}
           </span>
         ))}
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#8aa8a3" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+          style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}
+        >
+          <path d="M6 9l6 6 6-6" />
+        </svg>
       </div>
       {open && !disabled && (
         <>
@@ -267,7 +273,7 @@ export default function Clinical({
 
       <div style={{ background: '#fff', border: '1px solid #dfece9', borderRadius: 18, padding: 24, marginTop: 16 }}>
         <h3 style={{ ...h3Style, marginBottom: 16 }}>Doctor's form</h3>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 280px), 1fr))', gap: 16 }}>
           <div>
             <label style={labelStyle}>Chief complaint</label>
             <MultiSelect
