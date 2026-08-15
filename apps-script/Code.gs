@@ -8,8 +8,8 @@
  * Sheets used (auto-created on first call if missing):
  *   Patients: patientId | mobile | name | age | gender | createdAt
  *   Visits:   visitId | patientId | visitNo | date | createdAt | done |
- *             problem | chiefComplaint | treatmentGroup | treatment |
- *             toothNumber | treatmentOther | treatingDoctor | treatmentCost | amountPaid |
+ *             chiefComplaint | chiefDescription | treatmentGroup | treatment |
+ *             toothNumber | treatmentOther | treatmentCost | amountPaid |
  *             balanceDue | paymentMode | paymentStatus | treatmentStage |
  *             googleReviewTaken | nextAppointment | comments
  *   Settings: key | value   (rows: seq, upiQr)
@@ -33,8 +33,8 @@ var QR_FOLDER_NAME = 'Clinic Console QR';
 var PATIENTS_HEADERS = ['patientId', 'mobile', 'name', 'age', 'gender', 'createdAt'];
 var VISITS_HEADERS = [
   'visitId', 'patientId', 'visitNo', 'date', 'createdAt', 'done',
-  'problem', 'chiefComplaint', 'treatmentGroup', 'treatment', 'toothNumber', 'treatmentOther',
-  'treatingDoctor', 'treatmentCost', 'amountPaid', 'balanceDue',
+  'chiefComplaint', 'chiefDescription', 'treatmentGroup', 'treatment', 'toothNumber', 'treatmentOther',
+  'treatmentCost', 'amountPaid', 'balanceDue',
   'paymentMode', 'paymentStatus', 'treatmentStage', 'googleReviewTaken',
   'nextAppointment', 'nextAppointmentTime', 'comments',
 ];
@@ -173,13 +173,12 @@ function readSnapshot_() {
       createdAt: v.createdAt instanceof Date ? v.createdAt.toISOString() : String(v.createdAt || ''),
       done: v.done === true || v.done === 'TRUE' || v.done === 'true',
       clinical: {
-        problem: v.problem || '',
         chiefComplaint: v.chiefComplaint || '',
+        chiefDescription: v.chiefDescription || '',
         treatmentGroup: v.treatmentGroup || '',
         treatment: v.treatment || '',
         toothNumber: v.toothNumber instanceof Date ? '' : String(v.toothNumber || ''),
         treatmentOther: v.treatmentOther || '',
-        treatingDoctor: v.treatingDoctor || '',
         treatmentCost: v.treatmentCost === '' ? '' : String(v.treatmentCost),
         amountPaid: v.amountPaid === '' ? '' : String(v.amountPaid),
         balanceDue: v.balanceDue === '' ? '' : String(v.balanceDue),
@@ -329,13 +328,12 @@ function action_saveClinical_(body) {
     var paymentStatus = remaining <= 0 ? 'Fully Paid' : (num(cform.amountPaid) > 0 ? 'Partially paid' : 'Not paid');
     var r = targetRow + 2;
     var fields = {
-      problem: cform.problem || '',
       chiefComplaint: cform.chiefComplaint || '',
+      chiefDescription: cform.chiefDescription || '',
       treatmentGroup: cform.treatmentGroup || '',
       treatment: cform.treatment || '',
       toothNumber: cform.toothNumber || '',
       treatmentOther: cform.treatmentOther || '',
-      treatingDoctor: cform.treatingDoctor || '',
       treatmentCost: cform.treatmentCost || '',
       amountPaid: cform.amountPaid || '',
       balanceDue: String(balanceDue),

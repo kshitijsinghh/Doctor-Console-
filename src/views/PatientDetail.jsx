@@ -24,11 +24,10 @@ function buildDetailRows(v) {
   const rows = [];
   const add = (k, val) => { if (val) rows.push({ k, v: val }); };
   add('Date', fmtDate(v.date));
-  add('Problem', c.problem);
   add('Chief complaint', c.chiefComplaint);
+  add('Description', c.chiefDescription);
   add('Treatment group', c.treatmentGroup);
   add('Treatment', /Other/.test(c.treatment) && c.treatmentOther ? c.treatmentOther : c.treatment);
-  add('Treating doctor', c.treatingDoctor);
   if (num(c.treatmentCost)) add('Treatment cost', inr(num(c.treatmentCost)));
   if (num(c.amountPaid)) add('Amount paid', inr(num(c.amountPaid)));
   if (c.balanceDue !== undefined && c.balanceDue !== '') add('Balance due', inr(num(c.balanceDue)));

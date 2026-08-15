@@ -139,9 +139,9 @@ export default function Clinical({
       detail = {
         title: dv.visitId, dateLabel: fmtDate(dv.date), name: dp.name,
         rows: [
-          { k: 'Problem', v: dash(c.problem) }, { k: 'Chief complaint', v: dash(c.chiefComplaint) },
+          { k: 'Chief complaint', v: dash(c.chiefComplaint) }, { k: 'Description', v: dash(c.chiefDescription) },
           { k: 'Treatment group', v: dash(c.treatmentGroup) }, { k: 'Treatment', v: dash(trd) },
-          { k: 'Tooth number', v: dash(c.toothNumber) }, { k: 'Treating doctor', v: dash(c.treatingDoctor) },
+          { k: 'Tooth number', v: dash(c.toothNumber) },
           { k: 'Treatment cost', v: c.treatmentCost ? inr(num(c.treatmentCost)) : '—' },
           { k: 'Amount paid', v: c.amountPaid ? inr(num(c.amountPaid)) : '—' },
           { k: 'Balance due', v: c.balanceDue ? inr(num(c.balanceDue)) : '—' },
@@ -266,21 +266,21 @@ export default function Clinical({
       )}
 
       <div style={{ background: '#fff', border: '1px solid #dfece9', borderRadius: 18, padding: 24, marginTop: 16 }}>
-        <h3 style={{ ...h3Style, marginBottom: 16 }}>Diagnosis</h3>
+        <h3 style={{ ...h3Style, marginBottom: 16 }}>Doctor's form</h3>
         <div style={{ display: 'grid', gridTemplateColumns: FLUID_GRID_2COL, gap: 16 }}>
-          <div style={{ gridColumn: '1 / -1' }}>
-            <label style={labelStyle}>Problem</label>
-            <input
-              className="fld" value={cform.problem} onChange={(e) => onSetField('problem', e.target.value)}
-              placeholder="Describe the presenting problem" style={{ ...fieldStyle, ...(readOnly ? roStyle : {}) }} disabled={readOnly}
+          <div>
+            <label style={labelStyle}>Chief complaint</label>
+            <MultiSelect
+              value={cform.chiefComplaint} options={CHIEF_COMPLAINTS}
+              onChange={(v) => onSetField('chiefComplaint', v)} placeholder="Select…" disabled={readOnly}
             />
           </div>
           <div>
-            <label style={labelStyle}>Chief complaint</label>
-            <select value={cform.chiefComplaint} onChange={(e) => onSetField('chiefComplaint', e.target.value)} style={{ ...fieldStyle, ...(readOnly ? roStyle : {}) }} disabled={readOnly}>
-              <option value="">Select…</option>
-              {CHIEF_COMPLAINTS.map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
+            <label style={labelStyle}>Description</label>
+            <input
+              className="fld" value={cform.chiefDescription} onChange={(e) => onSetField('chiefDescription', e.target.value)}
+              placeholder="Describe the chief complaint" style={{ ...fieldStyle, ...(readOnly ? roStyle : {}) }} disabled={readOnly}
+            />
           </div>
           <div>
             <label style={labelStyle}>Treatment group</label>
@@ -289,7 +289,7 @@ export default function Clinical({
               onChange={(v) => onSetField('treatmentGroup', v)} placeholder="Select…" disabled={readOnly}
             />
           </div>
-          <div style={{ gridColumn: '1 / -1' }}>
+          <div>
             <label style={labelStyle}>Treatment</label>
             <MultiSelect
               value={cform.treatment} options={TREATMENTS}
