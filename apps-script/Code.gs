@@ -8,7 +8,7 @@
  * Sheets used (auto-created on first call if missing):
  *   Patients: patientId | mobile | name | age | gender | createdAt
  *   Visits:   visitId | patientId | visitNo | date | createdAt | done |
- *             chiefComplaint | chiefDescription | treatmentGroup | treatment |
+ *             chiefDescription | chiefComplaint | treatmentGroup | treatment |
  *             toothNumber | treatmentOther | treatmentCost | amountPaid |
  *             balanceDue | paymentMode | paymentStatus | treatmentStage |
  *             googleReviewTaken | nextAppointment | comments
@@ -33,7 +33,7 @@ var QR_FOLDER_NAME = 'Clinic Console QR';
 var PATIENTS_HEADERS = ['patientId', 'mobile', 'name', 'age', 'gender', 'createdAt'];
 var VISITS_HEADERS = [
   'visitId', 'patientId', 'visitNo', 'date', 'createdAt', 'done',
-  'chiefComplaint', 'chiefDescription', 'treatmentGroup', 'treatment', 'toothNumber', 'treatmentOther',
+  'chiefDescription', 'chiefComplaint', 'treatmentGroup', 'treatment', 'toothNumber', 'treatmentOther',
   'treatmentCost', 'amountPaid', 'balanceDue',
   'paymentMode', 'paymentStatus', 'treatmentStage', 'googleReviewTaken',
   'nextAppointment', 'nextAppointmentTime', 'comments',
