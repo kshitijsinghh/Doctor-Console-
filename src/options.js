@@ -13,7 +13,7 @@ export const CHIEF_COMPLAINTS = [
 
 export const TREATMENT_GROUPS = [
   'Preventive', 'Restorative', 'Prosthodontics', 'Consultation', 'Oral Surgery',
-  'Endodontics', 'Pain', 'Paediatric Dentistry', 'Other', 'Implantology',
+  'Endodontics', 'Pain', 'Paediatric Dentistry', 'Implantology', 'Orthodontist', 'Periodontics', 'Other',
 ];
 
 export const TREATMENTS = [
@@ -22,11 +22,16 @@ export const TREATMENTS = [
   'Crown Preparation', 'Crown', 'BMP', 'Access Opening', 'Crown Recementation',
   'Obturation', 'ICM', 'Core Build-up', 'Suture Removal', 'WL',
   'Surgical Extraction', 'Bridge Removal', 'Impression', 'Night Guard Delivery',
-  'Temporary Restoration', 'Other', 'Endocrown Preparation', 'Implant',
-  'Crown Removal', 'Re-RCT',
+  'Temporary Restoration', 'Endocrown Preparation', 'Implant',
+  'Crown Removal', 'Re-RCT', 'Braces', 'Aligners', 'Other',
 ];
 
-export const TOOTH_NUMBERS = Array.from({ length: 32 }, (_, i) => String(i + 1));
+export const TOOTH_NUMBERS = [
+  '1-1', '1-2', '1-3', '1-4', '1-5', '1-6', '1-7', '1-8',
+  '2-1', '2-2', '2-3', '2-4', '2-5', '2-6', '2-7', '2-8',
+  '3-1', '3-2', '3-3', '3-4', '3-5', '3-6', '3-7', '3-8',
+  '4-1', '4-2', '4-3', '4-4', '4-5', '4-6', '4-7', '4-8',
+];
 
 export const PAYMENT_MODES = ['UPI', 'Debit Card', 'Credit Card'];
 export const YES_NO = ['Yes', 'No'];

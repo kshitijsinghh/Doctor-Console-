@@ -14,19 +14,73 @@ const roStyle = { opacity: 0.7, background: '#f0f4f3', cursor: 'default' };
 
 function num(x) { const n = parseFloat(x); return isNaN(n) ? 0 : n; }
 
-function MultiSelect({ value, options, onChange, placeholder, disabled }) {
+function MultiSelect({ value, options, onChange, placeholder, disabled, allowOther, searchable }) {
   const [open, setOpen] = useState(false);
-  const selected = value ? value.split(', ').filter(Boolean) : [];
+  const [search, setSearch] = useState('');
+
+  const allTokens = value ? value.split(', ').filter(Boolean) : [];
+  const stdOptions = allowOther ? options.filter((o) => o !== 'Other') : options;
+  const stdSelected = allTokens.filter((t) => stdOptions.includes(t));
+
+  let isOtherOn = false;
+  let otherText = '';
+  if (allowOther) {
+    const custom = allTokens.filter((t) => !stdOptions.includes(t) && t !== 'Other');
+    isOtherOn = allTokens.includes('Other') || custom.length > 0;
+    otherText = custom.join(', ');
+  }
+
+  const displayChips = allowOther
+    ? [...stdSelected, ...(isOtherOn ? (otherText ? [otherText] : ['Other']) : [])]
+    : allTokens;
+
+  function buildVal(std, oText, oOn) {
+    const parts = [...std];
+    if (oOn) parts.push(oText?.trim() || 'Other');
+    return parts.join(', ');
+  }
 
   function toggle(opt) {
-    const next = selected.includes(opt) ? selected.filter((s) => s !== opt) : [...selected, opt];
-    onChange(next.join(', '));
+    if (allowOther && opt === 'Other') {
+      onChange(isOtherOn ? stdSelected.join(', ') : buildVal(stdSelected, '', true));
+      return;
+    }
+    const base = allowOther ? stdSelected : allTokens;
+    const next = base.includes(opt) ? base.filter((s) => s !== opt) : [...base, opt];
+    onChange(allowOther ? buildVal(next, otherText, isOtherOn) : next.join(', '));
   }
+
+  function removeChip(chip) {
+    if (allowOther && !stdOptions.includes(chip)) {
+      onChange(stdSelected.join(', '));
+      return;
+    }
+    toggle(chip);
+  }
+
+  const filtered = searchable && search
+    ? stdOptions.filter((o) => o.toLowerCase().includes(search.toLowerCase()))
+    : stdOptions;
+
+  const checkBox = (on) => (
+    <span style={{
+      width: 18, height: 18, borderRadius: 4,
+      border: '2px solid ' + (on ? '#12a094' : '#d6e7e3'),
+      background: on ? '#12a094' : '#fff',
+      display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+    }}>
+      {on && (
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M20 6L9 17l-5-5" />
+        </svg>
+      )}
+    </span>
+  );
 
   return (
     <div style={{ position: 'relative' }}>
       <div
-        onClick={() => !disabled && setOpen(!open)}
+        onClick={() => { if (!disabled) { if (open) setSearch(''); setOpen(!open); } }}
         style={{
           ...fieldStyle, display: 'flex', flexWrap: 'wrap', gap: 6,
           cursor: disabled ? 'default' : 'pointer',
@@ -35,8 +89,8 @@ function MultiSelect({ value, options, onChange, placeholder, disabled }) {
           position: 'relative',
         }}
       >
-        {selected.length === 0 && <span style={{ color: '#98b0ab', flex: 1 }}>{placeholder || 'Select…'}</span>}
-        {selected.map((s) => (
+        {displayChips.length === 0 && <span style={{ color: '#98b0ab', flex: 1 }}>{placeholder || 'Select…'}</span>}
+        {displayChips.map((s) => (
           <span
             key={s}
             style={{
@@ -47,7 +101,7 @@ function MultiSelect({ value, options, onChange, placeholder, disabled }) {
           >
             {s}
             {!disabled && <span
-              onClick={(e) => { e.stopPropagation(); toggle(s); }}
+              onClick={(e) => { e.stopPropagation(); removeChip(s); }}
               style={{ cursor: 'pointer', fontSize: 15, lineHeight: 1, color: '#5c7a76', marginLeft: 2 }}
             >&times;</span>}
           </span>
@@ -60,15 +114,24 @@ function MultiSelect({ value, options, onChange, placeholder, disabled }) {
       </div>
       {open && !disabled && (
         <>
-          <div onClick={() => setOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 40 }} />
+          <div onClick={() => { setOpen(false); setSearch(''); }} style={{ position: 'fixed', inset: 0, zIndex: 40 }} />
           <div style={{
             position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50,
-            maxHeight: 220, overflowY: 'auto', background: '#fff',
+            maxHeight: 260, overflowY: 'auto', background: '#fff',
             border: '1px solid #d6e7e3', borderRadius: 10, marginTop: 4,
             boxShadow: '0 8px 24px rgba(14,59,57,.12)',
           }}>
-            {options.map((opt) => {
-              const on = selected.includes(opt);
+            {searchable && (
+              <div style={{ padding: '8px 10px', borderBottom: '1px solid #eef4f3', position: 'sticky', top: 0, background: '#fff', zIndex: 1 }}>
+                <input
+                  value={search} onChange={(e) => setSearch(e.target.value)}
+                  onClick={(e) => e.stopPropagation()} placeholder="Search…" autoFocus
+                  style={{ width: '100%', padding: '8px 10px', border: '1px solid #d6e7e3', borderRadius: 8, fontSize: 14, background: '#f7fbfa' }}
+                />
+              </div>
+            )}
+            {filtered.map((opt) => {
+              const on = stdSelected.includes(opt);
               return (
                 <div
                   key={opt} onClick={() => toggle(opt)}
@@ -78,22 +141,38 @@ function MultiSelect({ value, options, onChange, placeholder, disabled }) {
                     background: on ? '#eef7f6' : '#fff', borderBottom: '1px solid #f0f6f5',
                   }}
                 >
-                  <span style={{
-                    width: 18, height: 18, borderRadius: 4,
-                    border: '2px solid ' + (on ? '#12a094' : '#d6e7e3'),
-                    background: on ? '#12a094' : '#fff',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-                  }}>
-                    {on && (
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M20 6L9 17l-5-5" />
-                      </svg>
-                    )}
-                  </span>
+                  {checkBox(on)}
                   <span style={{ color: on ? '#0e3b39' : '#5c7a76', fontWeight: on ? 600 : 400 }}>{opt}</span>
                 </div>
               );
             })}
+            {allowOther && (!search || 'other'.includes(search.toLowerCase())) && (
+              <>
+                <div onClick={() => toggle('Other')}
+                  style={{
+                    padding: '10px 14px', cursor: 'pointer', fontSize: 14,
+                    display: 'flex', alignItems: 'center', gap: 10,
+                    background: isOtherOn ? '#eef7f6' : '#fff', borderBottom: '1px solid #f0f6f5',
+                  }}
+                >
+                  {checkBox(isOtherOn)}
+                  <span style={{ color: isOtherOn ? '#0e3b39' : '#5c7a76', fontWeight: isOtherOn ? 600 : 400 }}>Other</span>
+                </div>
+                {isOtherOn && (
+                  <div style={{ padding: '4px 14px 10px', background: '#eef7f6' }}>
+                    <input
+                      value={otherText}
+                      onChange={(e) => onChange(buildVal(stdSelected, e.target.value, true))}
+                      onClick={(e) => e.stopPropagation()} placeholder="Type here…" autoFocus
+                      style={{ width: '100%', padding: '8px 10px', border: '1px solid #d6e7e3', borderRadius: 8, fontSize: 14, background: '#fff' }}
+                    />
+                  </div>
+                )}
+              </>
+            )}
+            {searchable && search && filtered.length === 0 && (
+              <div style={{ padding: '14px', color: '#98b0ab', fontSize: 14, textAlign: 'center' }}>No matches</div>
+            )}
           </div>
         </>
       )}
@@ -279,6 +358,7 @@ export default function Clinical({
             <MultiSelect
               value={cform.chiefComplaint} options={CHIEF_COMPLAINTS}
               onChange={(v) => onSetField('chiefComplaint', v)} placeholder="Select…" disabled={readOnly}
+              allowOther
             />
           </div>
           <div>
@@ -293,6 +373,7 @@ export default function Clinical({
             <MultiSelect
               value={cform.treatmentGroup} options={TREATMENT_GROUPS}
               onChange={(v) => onSetField('treatmentGroup', v)} placeholder="Select…" disabled={readOnly}
+              allowOther
             />
           </div>
           <div>
@@ -300,6 +381,7 @@ export default function Clinical({
             <MultiSelect
               value={cform.treatment} options={TREATMENTS}
               onChange={(v) => onSetField('treatment', v)} placeholder="Select…" disabled={readOnly}
+              allowOther
             />
           </div>
           <div style={{ gridColumn: '1 / -1' }}>
@@ -307,17 +389,9 @@ export default function Clinical({
             <MultiSelect
               value={cform.toothNumber} options={TOOTH_NUMBERS}
               onChange={(v) => onSetField('toothNumber', v)} placeholder="Select…" disabled={readOnly}
+              searchable
             />
           </div>
-          {showTreatmentOther && (
-            <div style={{ gridColumn: '1 / -1' }}>
-              <label style={labelStyle}>Treatment — other (specify)</label>
-              <input
-                className="fld" value={cform.treatmentOther} onChange={(e) => onSetField('treatmentOther', e.target.value)}
-                placeholder="Type the treatment" style={{ ...fieldStyle, ...(readOnly ? roStyle : {}) }} disabled={readOnly}
-              />
-            </div>
-          )}
         </div>
 
         <h3 style={{ ...h3Style, margin: '24px 0 16px' }}>Billing</h3>
