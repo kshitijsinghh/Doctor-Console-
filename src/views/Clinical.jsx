@@ -267,7 +267,7 @@ export default function Clinical({
 
       <div style={{ background: '#fff', border: '1px solid #dfece9', borderRadius: 18, padding: 24, marginTop: 16 }}>
         <h3 style={{ ...h3Style, marginBottom: 16 }}>Doctor's form</h3>
-        <div style={{ display: 'grid', gridTemplateColumns: FLUID_GRID_2COL, gap: 16 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16 }}>
           <div>
             <label style={labelStyle}>Chief complaint</label>
             <MultiSelect
@@ -279,7 +279,7 @@ export default function Clinical({
             <label style={labelStyle}>Description</label>
             <input
               className="fld" value={cform.chiefDescription} onChange={(e) => onSetField('chiefDescription', e.target.value)}
-              placeholder="Describe the chief complaint" style={{ ...fieldStyle, ...(readOnly ? roStyle : {}) }} disabled={readOnly}
+              placeholder="Notes on the chief complaint" style={{ ...fieldStyle, ...(readOnly ? roStyle : {}) }} disabled={readOnly}
             />
           </div>
           <div>
