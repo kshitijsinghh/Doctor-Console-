@@ -81,6 +81,7 @@ export default function App({ user, onLogout }) {
   const [savingClinical, setSavingClinical] = useState(false);
   const [clinicalError, setClinicalError] = useState('');
   const [showQr, setShowQr] = useState(false);
+  const [clinicalReadOnly, setClinicalReadOnly] = useState(false);
 
   function applySnapshot(res) {
     setDbState({ patients: res.patients, order: res.order, seq: res.seq, upiQr: res.upiQr });
@@ -201,6 +202,7 @@ export default function App({ user, onLogout }) {
     setCform(blankClinical());
     setSavedFlash(false);
     setClinicalError('');
+    setClinicalReadOnly(false);
     setForm({ mobile: '', name: '', age: '', gender: '', date: today() });
     setLookupState('');
     setExistingPatientId('');
@@ -216,7 +218,7 @@ export default function App({ user, onLogout }) {
     }
   }
 
-  function openVisit(pid, visitId) {
+  function openVisit(pid, visitId, readOnly) {
     const p = db.patients[pid];
     const v = p && p.visits.find((x) => x.visitId === visitId);
     setCurPatientId(pid);
@@ -224,7 +226,19 @@ export default function App({ user, onLogout }) {
     setCform(v && v.clinical ? { ...blankClinical(), ...v.clinical } : blankClinical());
     setSavedFlash(false);
     setClinicalError('');
+    setClinicalReadOnly(!!readOnly);
     pushView('clinical');
+  }
+
+  function onCreateNewVisitFromAppt(pid) {
+    const p = db.patients[pid];
+    if (!p) return;
+    setForm({ mobile: p.mobile, name: p.name, age: p.age, gender: p.gender, date: today() });
+    setLookupState('existing');
+    setExistingPatientId(pid);
+    setIntakeError('');
+    setClinicalReadOnly(false);
+    pushView('intake');
   }
 
   async function onSaveClinical() {
@@ -353,7 +367,7 @@ export default function App({ user, onLogout }) {
           date: na, time: nat, timeLabel: fmtTime(nat), name: p.name, mobile: p.mobile,
           patientId: pid, visitId: v.visitId, treatmentLabel: trr || '—',
           stage: (v.clinical.treatmentStage || '—'),
-          open: () => openVisit(pid, v.visitId),
+          open: () => openVisit(pid, v.visitId, true),
         });
       }
     }
@@ -537,6 +551,8 @@ export default function App({ user, onLogout }) {
             error={clinicalError}
             apptCountText={apptCountText} showApptCount={!!cform.nextAppointment}
             db={db} curPatientId={curPatientId}
+            readOnly={clinicalReadOnly}
+            onCreateNewVisit={() => onCreateNewVisitFromAppt(curPatientId)}
           />
         )}
       </main>
