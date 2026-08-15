@@ -188,7 +188,7 @@ function readSnapshot_() {
         treatmentStage: v.treatmentStage || '',
         googleReviewTaken: v.googleReviewTaken || '',
         nextAppointment: v.nextAppointment instanceof Date ? formatDate_(v.nextAppointment) : String(v.nextAppointment || ''),
-        nextAppointmentTime: v.nextAppointmentTime || '',
+        nextAppointmentTime: v.nextAppointmentTime instanceof Date ? Utilities.formatDate(v.nextAppointmentTime, Session.getScriptTimeZone(), 'HH:mm') : String(v.nextAppointmentTime || ''),
         comments: v.comments || '',
       },
     });
@@ -350,7 +350,7 @@ function action_saveClinical_(body) {
     };
     for (var key in fields) {
       var cell = visitsSh.getRange(r, vData.idx[key] + 1);
-      if (key === 'toothNumber') cell.setNumberFormat('@');
+      if (key === 'toothNumber' || key === 'nextAppointmentTime') cell.setNumberFormat('@');
       cell.setValue(fields[key]);
     }
 

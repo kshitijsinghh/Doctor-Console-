@@ -97,6 +97,14 @@ function fmtDate(d) {
   try { return new Date(d + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }); }
   catch { return d; }
 }
+function fmtTime(t) {
+  if (!t) return '—';
+  const [h, m] = t.split(':').map(Number);
+  if (isNaN(h)) return '—';
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  const hr = h % 12 || 12;
+  return hr + ':' + String(m).padStart(2, '0') + ' ' + ampm;
+}
 function dash(x) { return (x === undefined || x === null || x === '') ? '—' : x; }
 
 export default function Clinical({
@@ -136,7 +144,7 @@ export default function Clinical({
           { k: 'Payment mode', v: dash(c.paymentMode) }, { k: 'Payment status', v: dash(c.paymentStatus) },
           { k: 'Treatment stage', v: dash(c.treatmentStage) }, { k: 'Google review taken', v: dash(c.googleReviewTaken) },
           { k: 'Next appointment', v: c.nextAppointment ? fmtDate(c.nextAppointment) : '—' },
-          { k: 'Next appointment time', v: c.nextAppointmentTime || '—' },
+          { k: 'Next appointment time', v: fmtTime(c.nextAppointmentTime) },
           { k: 'Comments', v: dash(c.comments) },
         ],
       };
