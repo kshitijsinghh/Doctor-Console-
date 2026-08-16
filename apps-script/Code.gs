@@ -315,8 +315,10 @@ function action_saveIntake_(body) {
     var pData = sheetRows_(patientsSh);
     var patientId = null;
     var rowIdx = -1;
+    var nameToMatch = name.toLowerCase();
     for (var i = 0; i < pData.rows.length; i++) {
-      if (String(pData.rows[i][pData.idx.mobile]) === mobile) {
+      if (String(pData.rows[i][pData.idx.mobile]) === mobile &&
+          String(pData.rows[i][pData.idx.name] || '').trim().toLowerCase() === nameToMatch) {
         patientId = pData.rows[i][pData.idx.patientId];
         rowIdx = i;
         break;
@@ -325,7 +327,6 @@ function action_saveIntake_(body) {
 
     if (patientId) {
       var r = rowIdx + 2;
-      patientsSh.getRange(r, pData.idx.name + 1).setValue(name);
       patientsSh.getRange(r, pData.idx.age + 1).setValue(age);
       patientsSh.getRange(r, pData.idx.gender + 1).setValue(gender);
     } else {

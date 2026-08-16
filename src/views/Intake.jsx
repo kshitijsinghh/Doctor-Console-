@@ -9,7 +9,9 @@ const labelStyle = { display: 'block', fontWeight: 700, fontSize: 13.5, color: '
 
 export default function Intake({
   form, onSetField, onLookup, lookupState, existingPatientId, nextVisitNo,
-  previewPatientId, previewVisitId, intakeError, onGoBack, onSaveIntake, saving,
+  previewPatientId, previewVisitId,
+  mobilePatients, addAnother, onSelectPatient, onAddAnother, onCancelAddAnother,
+  intakeError, onGoBack, onSaveIntake, saving,
 }) {
   return (
     <div style={{ maxWidth: 720, margin: '0 auto' }}>
@@ -46,16 +48,62 @@ export default function Intake({
           </button>
         </div>
 
-        {lookupState === 'existing' && (
-          <div style={{ marginTop: 14, padding: '13px 16px', borderRadius: 12, background: '#e6f4f2', border: '1px solid #c9e6e1', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-            <span style={{ width: 34, height: 34, borderRadius: '50%', background: '#0e756c', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700 }}>
-              ✓
+        {lookupState === 'existing' && !addAnother && (
+          <div style={{ marginTop: 14 }}>
+            <div style={{ padding: '13px 16px', borderRadius: 12, background: '#e6f4f2', border: '1px solid #c9e6e1', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <span style={{ width: 34, height: 34, borderRadius: '50%', background: '#0e756c', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700 }}>
+                ✓
+              </span>
+              <span style={{ fontSize: 14, color: '#0e3b39' }}>
+                <strong>Returning patient — {form.name}</strong> ({existingPatientId}). This will be visit <strong>#{nextVisitNo}</strong>. Details are pre-filled below.
+              </span>
+            </div>
+
+            {mobilePatients.length > 1 && (
+              <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', padding: '0 4px' }}>
+                <span style={{ fontSize: 12.5, color: '#7a9994', fontWeight: 600 }}>On this number:</span>
+                {mobilePatients.map((p) => (
+                  <button
+                    key={p.patientId}
+                    onClick={() => onSelectPatient(p.patientId)}
+                    style={{
+                      ...TOUCH_BTN, padding: '5px 12px', borderRadius: 100, border: '1px solid ' + (p.patientId === existingPatientId ? '#12a094' : '#d6e7e3'),
+                      background: p.patientId === existingPatientId ? '#e6f4f2' : '#fff',
+                      color: p.patientId === existingPatientId ? '#0e756c' : '#5c7a76',
+                      fontWeight: 600, fontSize: 13, cursor: 'pointer',
+                    }}
+                  >
+                    {p.name}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <div style={{ marginTop: 10, padding: '0 4px' }}>
+              <span
+                onClick={onAddAnother}
+                style={{ fontSize: 13, color: '#8aa8a3', cursor: 'pointer', textDecoration: 'underline' }}
+              >
+                Someone else on this number? Add another patient
+              </span>
+            </div>
+          </div>
+        )}
+
+        {lookupState === 'existing' && addAnother && (
+          <div style={{ marginTop: 14, padding: '13px 16px', borderRadius: 12, background: '#fdf6f4', border: '1px solid #f6d3c8', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', justifyContent: 'space-between' }}>
+            <span style={{ fontSize: 14, color: '#8a5b4e' }}>
+              Adding another patient on this number — enter a different name (a new Patient ID is created).
             </span>
-            <span style={{ fontSize: 14, color: '#0e3b39' }}>
-              <strong>Returning patient — {form.name}</strong> ({existingPatientId}). This will be visit <strong>#{nextVisitNo}</strong>. Details are pre-filled below.
+            <span
+              onClick={onCancelAddAnother}
+              style={{ fontSize: 13, color: '#b0442a', fontWeight: 700, cursor: 'pointer', textDecoration: 'underline', flexShrink: 0 }}
+            >
+              Cancel
             </span>
           </div>
         )}
+
         {lookupState === 'new' && (
           <div style={{ marginTop: 14, padding: '13px 16px', borderRadius: 12, background: '#fdf0ec', border: '1px solid #f6d3c8', fontSize: 14, color: '#b0442a' }}>
             <strong>New patient.</strong> A fresh Patient ID will be generated on save.

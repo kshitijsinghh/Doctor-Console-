@@ -46,13 +46,14 @@ function blankClinical() {
     treatmentStage: '', googleReviewTaken: '', nextAppointment: '', nextAppointmentTime: '', comments: '',
   };
 }
-function findByMobile(db, mobile) {
+function findAllByMobile(db, mobile) {
   const mm = normMobile(mobile);
-  if (!mm || !db) return null;
+  if (!mm || !db) return [];
+  const result = [];
   for (const id of db.order) {
-    if (db.patients[id].mobile === mm) return db.patients[id];
+    if (db.patients[id].mobile === mm) result.push(db.patients[id]);
   }
-  return null;
+  return result;
 }
 
 export default function App({ user, onLogout }) {
@@ -70,6 +71,8 @@ export default function App({ user, onLogout }) {
   const [form, setForm] = useState({ mobile: '', name: '', age: '', gender: '', date: today() });
   const [lookupState, setLookupState] = useState('');
   const [existingPatientId, setExistingPatientId] = useState('');
+  const [mobilePatients, setMobilePatients] = useState([]);
+  const [addAnother, setAddAnother] = useState(false);
   const [intakeError, setIntakeError] = useState('');
   const [savingIntake, setSavingIntake] = useState(false);
 
@@ -145,6 +148,8 @@ export default function App({ user, onLogout }) {
     setForm({ mobile: '', name: '', age: '', gender: '', date: today() });
     setLookupState('');
     setExistingPatientId('');
+    setMobilePatients([]);
+    setAddAnother(false);
     setIntakeError('');
   }
   function goPatients() {
@@ -158,8 +163,11 @@ export default function App({ user, onLogout }) {
 
   function onLookup(mobile) {
     const m = mobile || form.mobile;
-    const p = findByMobile(db, m);
-    if (p) {
+    const matches = findAllByMobile(db, m);
+    setMobilePatients(matches);
+    setAddAnother(false);
+    if (matches.length > 0) {
+      const p = matches[0];
       setLookupState('existing');
       setExistingPatientId(p.patientId);
       setIntakeError('');
@@ -171,6 +179,31 @@ export default function App({ user, onLogout }) {
     }
   }
 
+  function onSelectPatient(pid) {
+    const p = mobilePatients.find((x) => x.patientId === pid);
+    if (!p) return;
+    setExistingPatientId(p.patientId);
+    setAddAnother(false);
+    setIntakeError('');
+    setForm((f) => ({ ...f, name: p.name, age: p.age, gender: p.gender }));
+  }
+
+  function onAddAnother() {
+    setAddAnother(true);
+    setExistingPatientId('');
+    setIntakeError('');
+    setForm((f) => ({ ...f, name: '', age: '', gender: '' }));
+  }
+
+  function onCancelAddAnother() {
+    setAddAnother(false);
+    const p = mobilePatients[0];
+    if (p) {
+      setExistingPatientId(p.patientId);
+      setForm((f) => ({ ...f, name: p.name, age: p.age, gender: p.gender }));
+    }
+  }
+
   async function onSaveIntake() {
     const mm = normMobile(form.mobile);
     if (!mm) return setIntakeError('Please enter a mobile number.');
@@ -178,10 +211,17 @@ export default function App({ user, onLogout }) {
     if (!form.name.trim() || !String(form.age).trim() || !form.gender || !form.date) {
       return setIntakeError('Name, age, gender and date are required.');
     }
+    if (addAnother) {
+      const dupName = mobilePatients.some((p) => p.name.toLowerCase() === form.name.trim().toLowerCase());
+      if (dupName) {
+        return setIntakeError('Another patient with this name already exists on this number. Please use a different name.');
+      }
+    }
     setIntakeError('');
 
     const intakeData = { mobile: mm, name: form.name.trim(), age: form.age, gender: form.gender, date: form.date };
-    const existingP = findByMobile(db, mm);
+    const allOnMobile = findAllByMobile(db, mm);
+    const existingP = addAnother ? null : allOnMobile.find((p) => p.name.toLowerCase() === form.name.trim().toLowerCase());
     const optPid = existingP ? existingP.patientId : 'P' + String(db.seq + 1).padStart(4, '0');
     const optNo = existingP ? existingP.visits.length + 1 : 1;
     const optVid = optPid + '_' + optNo;
@@ -207,6 +247,8 @@ export default function App({ user, onLogout }) {
     setForm({ mobile: '', name: '', age: '', gender: '', date: today() });
     setLookupState('');
     setExistingPatientId('');
+    setMobilePatients([]);
+    setAddAnother(false);
     replaceView('clinical');
 
     try {
@@ -241,6 +283,8 @@ export default function App({ user, onLogout }) {
     setForm({ mobile: p.mobile, name: p.name, age: p.age, gender: p.gender, date: today() });
     setLookupState('existing');
     setExistingPatientId(pid);
+    setMobilePatients(findAllByMobile(db, p.mobile));
+    setAddAnother(false);
     setIntakeError('');
     setClinicalReadOnly(false);
     pushView('intake');
@@ -406,9 +450,10 @@ export default function App({ user, onLogout }) {
   });
   const outstandingTotal = allPatients.reduce((s, p) => s + p.outstanding, 0);
 
-  const existing = findByMobile(db, form.mobile);
-  const previewPatientId = existing ? existing.patientId : 'P' + String(db.seq + 1).padStart(4, '0');
-  const nextVisitNo = existing ? existing.visits.length + 1 : 1;
+  const allOnMobile = findAllByMobile(db, form.mobile);
+  const matchedPatient = addAnother ? null : allOnMobile.find((p) => p.name.toLowerCase() === form.name.trim().toLowerCase());
+  const previewPatientId = matchedPatient ? matchedPatient.patientId : 'P' + String(db.seq + 1).padStart(4, '0');
+  const nextVisitNo = matchedPatient ? matchedPatient.visits.length + 1 : 1;
   const previewVisitId = previewPatientId + '_' + nextVisitNo;
 
   const curP = db.patients[curPatientId];
@@ -532,6 +577,8 @@ export default function App({ user, onLogout }) {
             form={form} onSetField={(k, v) => setForm((f) => ({ ...f, [k]: v }))}
             onLookup={onLookup} lookupState={lookupState} existingPatientId={existingPatientId} nextVisitNo={nextVisitNo}
             previewPatientId={previewPatientId} previewVisitId={previewVisitId}
+            mobilePatients={mobilePatients} addAnother={addAnother}
+            onSelectPatient={onSelectPatient} onAddAnother={onAddAnother} onCancelAddAnother={onCancelAddAnother}
             intakeError={intakeError} onGoBack={goBack} onSaveIntake={onSaveIntake} saving={savingIntake}
           />
         )}
