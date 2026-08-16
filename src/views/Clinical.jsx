@@ -36,7 +36,7 @@ function MultiSelect({ value, options, onChange, placeholder, disabled, allowOth
 
   function buildVal(std, oText, oOn) {
     const parts = [...std];
-    if (oOn) parts.push(oText?.trim() || 'Other');
+    if (oOn) parts.push(oText || 'Other');
     return parts.join(', ');
   }
 
