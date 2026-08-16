@@ -41,7 +41,7 @@ function fmtTime(t) {
 }
 function blankClinical() {
   return {
-    chiefComplaint: '', chiefDescription: '', treatmentGroup: '', treatment: '', toothNumber: '', treatmentOther: '',
+    patientType: '', chiefComplaint: '', chiefDescription: '', treatmentGroup: '', treatment: '', toothNumber: '', treatmentOther: '',
     treatmentCost: '', amountPaid: '', balanceDue: '', paymentMode: '',
     treatmentStage: '', googleReviewTaken: '', nextAppointment: '', nextAppointmentTime: '', comments: '',
   };
@@ -199,7 +199,8 @@ export default function App({ user, onLogout }) {
     setDbState(optDb);
     setCurPatientId(optPid);
     setCurVisitId(optVid);
-    setCform(blankClinical());
+    const autoType = Number(form.age) <= 12 ? 'Kid' : 'Adult';
+    setCform({ ...blankClinical(), patientType: autoType });
     setSavedFlash(false);
     setClinicalError('');
     setClinicalReadOnly(false);
@@ -223,7 +224,11 @@ export default function App({ user, onLogout }) {
     const v = p && p.visits.find((x) => x.visitId === visitId);
     setCurPatientId(pid);
     setCurVisitId(visitId);
-    setCform(v && v.clinical ? { ...blankClinical(), ...v.clinical } : blankClinical());
+    const base = v && v.clinical ? { ...blankClinical(), ...v.clinical } : blankClinical();
+    if (!base.patientType && p) {
+      base.patientType = Number(p.age) <= 12 ? 'Kid' : 'Adult';
+    }
+    setCform(base);
     setSavedFlash(false);
     setClinicalError('');
     setClinicalReadOnly(!!readOnly);

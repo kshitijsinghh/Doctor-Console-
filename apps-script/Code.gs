@@ -33,7 +33,7 @@ var QR_FOLDER_NAME = 'Clinic Console QR';
 var PATIENTS_HEADERS = ['patientId', 'mobile', 'name', 'age', 'gender', 'createdAt'];
 var VISITS_HEADERS = [
   'visitId', 'patientId', 'visitNo', 'date', 'createdAt', 'done',
-  'chiefDescription', 'chiefComplaint', 'treatmentGroup', 'treatment', 'toothNumber', 'treatmentOther',
+  'patientType', 'chiefDescription', 'chiefComplaint', 'treatmentGroup', 'treatment', 'toothNumber', 'treatmentOther',
   'treatmentCost', 'amountPaid', 'balanceDue',
   'paymentMode', 'paymentStatus', 'treatmentStage', 'googleReviewTaken',
   'nextAppointment', 'nextAppointmentTime', 'comments', 'calendarEventId',
@@ -185,6 +185,7 @@ function readSnapshot_() {
       createdAt: v.createdAt instanceof Date ? v.createdAt.toISOString() : String(v.createdAt || ''),
       done: v.done === true || v.done === 'TRUE' || v.done === 'true',
       clinical: {
+        patientType: v.patientType || '',
         chiefComplaint: v.chiefComplaint || '',
         chiefDescription: v.chiefDescription || '',
         treatmentGroup: v.treatmentGroup || '',
@@ -399,6 +400,7 @@ function action_saveClinical_(body) {
     var paymentStatus = remaining <= 0 ? 'Fully Paid' : (num(cform.amountPaid) > 0 ? 'Partially paid' : 'Not paid');
     var r = targetRow + 2;
     var fields = {
+      patientType: cform.patientType || '',
       chiefComplaint: cform.chiefComplaint || '',
       chiefDescription: cform.chiefDescription || '',
       treatmentGroup: cform.treatmentGroup || '',

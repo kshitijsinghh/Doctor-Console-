@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import {
-  CHIEF_COMPLAINTS, TREATMENT_GROUPS, TREATMENTS, TOOTH_NUMBERS, PAYMENT_MODES, YES_NO, TREATMENT_STAGES,
+  CHIEF_COMPLAINTS, TREATMENT_GROUPS, TREATMENTS, TOOTH_NUMBERS, TOOTH_NUMBERS_KID, PATIENT_TYPES, PAYMENT_MODES, YES_NO, TREATMENT_STAGES,
 } from '../options';
 import { TOUCH_BTN, FLUID_GRID_2COL } from '../styles';
 
@@ -224,6 +224,7 @@ export default function Clinical({
       detail = {
         title: dv.visitId, dateLabel: fmtDate(dv.date), name: dp.name,
         rows: [
+          { k: 'Patient type', v: dash(c.patientType) },
           { k: 'Chief complaint', v: dash(c.chiefComplaint) }, { k: 'Description', v: dash(c.chiefDescription) },
           { k: 'Treatment group', v: dash(c.treatmentGroup) }, { k: 'Treatment', v: dash(trd) },
           { k: 'Tooth number', v: dash(c.toothNumber) },
@@ -354,6 +355,16 @@ export default function Clinical({
         <h3 style={{ ...h3Style, marginBottom: 16 }}>Doctor's form</h3>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 280px), 1fr))', gap: 16 }}>
           <div>
+            <label style={labelStyle}>Patient type</label>
+            <select
+              value={cform.patientType} onChange={(e) => { onSetField('patientType', e.target.value); onSetField('toothNumber', ''); }}
+              style={{ ...fieldStyle, ...(readOnly ? roStyle : {}) }} disabled={readOnly}
+            >
+              <option value="">Select…</option>
+              {PATIENT_TYPES.map((pt) => <option key={pt} value={pt}>{pt}</option>)}
+            </select>
+          </div>
+          <div>
             <label style={labelStyle}>Chief complaint</label>
             <MultiSelect
               value={cform.chiefComplaint} options={CHIEF_COMPLAINTS}
@@ -387,7 +398,7 @@ export default function Clinical({
           <div style={{ gridColumn: '1 / -1' }}>
             <label style={labelStyle}>Tooth number</label>
             <MultiSelect
-              value={cform.toothNumber} options={TOOTH_NUMBERS}
+              value={cform.toothNumber} options={cform.patientType === 'Kid' ? TOOTH_NUMBERS_KID : TOOTH_NUMBERS}
               onChange={(v) => onSetField('toothNumber', v)} placeholder="Select…" disabled={readOnly}
               searchable
             />
