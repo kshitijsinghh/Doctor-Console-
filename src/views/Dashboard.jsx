@@ -179,9 +179,9 @@ export default function Dashboard({
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: 14, marginBottom: 22 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(140px,1fr))', gap: 14, marginBottom: 22 }}>
         {stats.map((st) => (
-          <div key={st.label} className={st.desktopOnly ? 'stat-desktop-only' : ''} style={{ background: '#fff', border: '1px solid #dfece9', borderRadius: 16, padding: '18px 20px' }}>
+          <div key={st.label} style={{ background: '#fff', border: '1px solid #dfece9', borderRadius: 16, padding: '18px 20px' }}>
             <span style={{ display: 'block', fontSize: 12.5, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: '#8aa8a3' }}>
               {st.label}
             </span>

@@ -397,10 +397,10 @@ export default function App({ user, onLogout }) {
   });
   const pendingVisits = rangeRows.filter((r) => !r.done).length;
   const stats = [
-    { label: 'Patients', value: rangePatientIds.length, color: '#0e756c', desktopOnly: true },
-    { label: 'Visits', value: rangeRows.length, color: '#0e756c', desktopOnly: true },
+    { label: 'Patients', value: rangePatientIds.length, color: '#0e756c' },
+    { label: 'Visits', value: rangeRows.length, color: '#0e756c' },
     { label: 'Pending visits', value: pendingVisits, color: '#ef5a3c' },
-    { label: 'Pending amount', value: inr(pendingAmount), color: '#ef5a3c', desktopOnly: true },
+    { label: 'Pending amount', value: inr(pendingAmount), color: '#ef5a3c' },
   ];
 
   // Appointments: filter by selected date
