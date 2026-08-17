@@ -524,7 +524,7 @@ export default function Clinical({
               </select>
             </div>
           )}
-          {cform.treatmentStage === 'In Progress' && (
+          {(cform.treatmentStage === 'In Progress' || cform.treatmentStage === 'Follow Up Pending') && (
             <>
               <div>
                 <label style={labelStyle}>Next appointment date</label>

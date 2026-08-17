@@ -471,17 +471,20 @@ export default function App({ user, onLogout }) {
     let runBal = 0;
     let lastReset = -1;
     sorted.forEach((v, i) => {
-      runBal += num(v.clinical && v.clinical.treatmentCost) - num(v.clinical && v.clinical.amountPaid);
+      const isCur = v.visitId === curVisitId;
+      const cost = isCur ? num(cform.treatmentCost) : num(v.clinical && v.clinical.treatmentCost);
+      const paid = isCur ? num(cform.amountPaid) : num(v.clinical && v.clinical.amountPaid);
+      runBal += cost - paid;
       if (runBal < 0) { runBal = 0; lastReset = i; }
     });
     pendingTotal = runBal;
     const rawPending = [];
     sorted.forEach((v, i) => {
-      const cost = num(v.clinical && v.clinical.treatmentCost);
-      const paid = num(v.clinical && v.clinical.amountPaid);
+      const isCur = v.visitId === curVisitId;
+      const cost = isCur ? num(cform.treatmentCost) : num(v.clinical && v.clinical.treatmentCost);
+      const paid = isCur ? num(cform.amountPaid) : num(v.clinical && v.clinical.amountPaid);
       const visitOwes = cost - paid;
       const trr = v.clinical ? (/Other/.test(v.clinical.treatment) && v.clinical.treatmentOther ? v.clinical.treatmentOther : v.clinical.treatment) : '';
-      const isCur = v.visitId === curVisitId;
       if (i > lastReset && visitOwes > 0) {
         rawPending.push({ visitId: v.visitId, dateLabel: fmtDate(v.date), rawAmount: visitOwes, current: isCur });
       }
