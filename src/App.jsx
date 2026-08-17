@@ -73,6 +73,8 @@ export default function App({ user, onLogout }) {
   const [existingPatientId, setExistingPatientId] = useState('');
   const [mobilePatients, setMobilePatients] = useState([]);
   const [addAnother, setAddAnother] = useState(false);
+  const [intakeMode, setIntakeMode] = useState('new');
+  const [intakeSearch, setIntakeSearch] = useState('');
   const [intakeError, setIntakeError] = useState('');
   const [savingIntake, setSavingIntake] = useState(false);
 
@@ -151,6 +153,8 @@ export default function App({ user, onLogout }) {
     setMobilePatients([]);
     setAddAnother(false);
     setIntakeError('');
+    setIntakeMode('new');
+    setIntakeSearch('');
   }
   function goPatients() {
     pushView('patients');
@@ -201,6 +205,41 @@ export default function App({ user, onLogout }) {
     if (p) {
       setExistingPatientId(p.patientId);
       setForm((f) => ({ ...f, name: p.name, age: p.age, gender: p.gender }));
+    }
+  }
+
+  async function startVisitForExisting(pid) {
+    const p = db.patients[pid];
+    if (!p) return;
+    const intakeData = { mobile: p.mobile, name: p.name, age: p.age, gender: p.gender, date: today() };
+    const optNo = p.visits.length + 1;
+    const optVid = pid + '_' + optNo;
+    const optVisit = { visitId: optVid, no: optNo, date: today(), done: false, clinical: null, createdAt: new Date().toISOString() };
+    const optDb = { ...db, patients: { ...db.patients } };
+    optDb.patients[pid] = { ...p, visits: [...p.visits, optVisit] };
+    setDbState(optDb);
+    setCurPatientId(pid);
+    setCurVisitId(optVid);
+    const autoType = Number(p.age) <= 12 ? 'Kid' : 'Adult';
+    setCform({ ...blankClinical(), patientType: autoType });
+    setSavedFlash(false);
+    setClinicalError('');
+    setClinicalReadOnly(false);
+    setForm({ mobile: '', name: '', age: '', gender: '', date: today() });
+    setLookupState('');
+    setExistingPatientId('');
+    setMobilePatients([]);
+    setAddAnother(false);
+    setIntakeMode('new');
+    setIntakeSearch('');
+    replaceView('clinical');
+    try {
+      const res = await saveIntake(intakeData);
+      applySnapshot(res);
+      if (res.patientId !== pid) setCurPatientId(res.patientId);
+      if (res.visitId !== optVid) setCurVisitId(res.visitId);
+    } catch {
+      setClinicalError('Visit creation failed — please go back and try again.');
     }
   }
 
@@ -456,6 +495,27 @@ export default function App({ user, onLogout }) {
   const nextVisitNo = matchedPatient ? matchedPatient.visits.length + 1 : 1;
   const previewVisitId = previewPatientId + '_' + nextVisitNo;
 
+  const intakeSearchQ = intakeSearch.trim().toLowerCase();
+  const intakeResults = [];
+  if (intakeSearchQ) {
+    for (const pid of db.order) {
+      if (intakeResults.length >= 20) break;
+      const p = db.patients[pid];
+      if ((p.name + ' ' + p.mobile + ' ' + pid).toLowerCase().includes(intakeSearchQ)) {
+        const sorted = p.visits.slice().sort((a, b) => (a.no || 0) - (b.no || 0));
+        const lastVisit = sorted.length > 0 ? sorted[sorted.length - 1] : null;
+        intakeResults.push({
+          patientId: pid, name: p.name, mobile: p.mobile,
+          ageGender: (p.age || '?') + ' · ' + (p.gender || '—'),
+          initial: (p.name || '?')[0].toUpperCase(),
+          lastLabel: lastVisit ? fmtDate(lastVisit.date) : '—',
+          nextVisitNo: p.visits.length + 1,
+          open: () => startVisitForExisting(pid),
+        });
+      }
+    }
+  }
+
   const curP = db.patients[curPatientId];
   const curV = curP && curP.visits.find((x) => x.visitId === curVisitId);
   const cur = {
@@ -583,6 +643,10 @@ export default function App({ user, onLogout }) {
             mobilePatients={mobilePatients} addAnother={addAnother}
             onSelectPatient={onSelectPatient} onAddAnother={onAddAnother} onCancelAddAnother={onCancelAddAnother}
             intakeError={intakeError} onGoBack={goBack} onSaveIntake={onSaveIntake} saving={savingIntake}
+            intakeMode={intakeMode} onSetIntakeMode={setIntakeMode}
+            intakeSearch={intakeSearch} onSetIntakeSearch={setIntakeSearch}
+            intakeResults={intakeResults} hasIntakeResults={intakeResults.length > 0}
+            showIntakeEmpty={!!intakeSearchQ && intakeResults.length === 0}
           />
         )}
 
