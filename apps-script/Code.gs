@@ -427,7 +427,7 @@ function action_saveClinical_(body) {
     }
 
     try {
-      var shouldHaveEvent = fields.treatmentStage === 'In Progress' && fields.nextAppointment;
+      var shouldHaveEvent = (fields.treatmentStage === 'In Progress' || fields.treatmentStage === 'Follow Up Pending') && fields.nextAppointment;
       var existingEventId = (vData.idx.calendarEventId !== undefined)
         ? String(vData.rows[targetRow][vData.idx.calendarEventId] || '') : '';
 

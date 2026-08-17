@@ -35,7 +35,7 @@ function buildDetailRows(v) {
   add('Payment status', c.paymentStatus);
   add('Treatment stage', c.treatmentStage);
   if (c.treatmentStage === 'Complete') add('Google review taken', c.googleReviewTaken);
-  if (c.treatmentStage === 'In Progress' && c.nextAppointment) {
+  if ((c.treatmentStage === 'In Progress' || c.treatmentStage === 'Follow Up Pending') && c.nextAppointment) {
     add('Next appointment', fmtDate(c.nextAppointment) + (c.nextAppointmentTime ? ' at ' + fmtTime(c.nextAppointmentTime) : ''));
   }
   add('Comments', c.comments);
