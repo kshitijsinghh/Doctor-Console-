@@ -18,6 +18,7 @@ export default function Dashboard({
   stats, q, onSetQ, visitRows, hasVisits, noVisits,
 }) {
   const [showRange, setShowRange] = useState(false);
+  const [showCustom, setShowCustom] = useState(false);
   const [calMonth, setCalMonth] = useState((dateFrom || todayStr()).slice(0, 7));
   const [tmpStart, setTmpStart] = useState(dateFrom);
   const [tmpEnd, setTmpEnd] = useState(dateTo);
@@ -26,6 +27,7 @@ export default function Dashboard({
     setTmpStart(dateFrom);
     setTmpEnd(dateTo);
     setCalMonth((dateFrom || todayStr()).slice(0, 7));
+    setShowCustom(false);
     setShowRange(true);
   }
   function selectDay(d) {
@@ -41,11 +43,10 @@ export default function Dashboard({
     const t = todayStr();
     let s = t, e = t;
     if (kind === 'today') { s = t; e = t; }
-    else if (kind === 'week') { s = addDays(t, -6); e = t; }
+    else if (kind === 'week') { const dow = parseYmd(t).getDay(); s = addDays(t, -dow); e = t; }
     else if (kind === 'month') { s = t.slice(0, 8) + '01'; e = t; }
     else if (kind === 'last30') { s = addDays(t, -29); e = t; }
     else if (kind === 'last7') { s = addDays(t, -6); e = t; }
-    else if (kind === 'all') { s = ''; e = ''; }
     onSetRange(s, e);
     setTmpStart(s);
     setTmpEnd(e);
@@ -120,60 +121,87 @@ export default function Dashboard({
                 position: 'absolute', top: 52, left: 0, zIndex: 30, background: '#fff',
                 border: '1px solid #dfece9', borderRadius: 16,
                 boxShadow: '0 24px 60px -18px rgba(14,59,57,.4)', padding: 16,
-                display: 'flex', gap: 16, flexWrap: 'wrap', width: 'min(560px,86vw)',
+                width: showCustom ? 'min(320px,86vw)' : 'min(220px,72vw)',
               }}
             >
-              <div style={{ flex: 1, minWidth: 250 }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-                  <button
-                    onClick={() => { const dt = new Date(calY, calM - 2, 1); setCalMonth(dt.getFullYear() + '-' + pad2(dt.getMonth() + 1)); }}
-                    style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid #e2efec', background: '#f7fbfa', cursor: 'pointer', color: '#0e756c', fontSize: 15 }}
+              {!showCustom ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  {[
+                    ['Today', 'today'],
+                    ['Week till date', 'week'],
+                    ['Month till date', 'month'],
+                    ['Last 30 days', 'last30'],
+                    ['Last 7 days', 'last7'],
+                  ].map(([label, key]) => (
+                    <button key={key} onClick={() => applyPreset(key)}
+                      style={{ textAlign: 'left', padding: '11px 14px', borderRadius: 10, border: 0, background: '#fff', color: '#33534f', fontWeight: 600, fontSize: 14, cursor: 'pointer' }}
+                      onMouseEnter={(e) => { e.currentTarget.style.background = '#f2f9f8'; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = '#fff'; }}
+                    >{label}</button>
+                  ))}
+                  <button onClick={() => { setShowCustom(true); setCalMonth((dateFrom || todayStr()).slice(0, 7)); }}
+                    style={{ textAlign: 'left', padding: '11px 14px', borderRadius: 10, border: 0, background: '#fff', color: '#0e756c', fontWeight: 700, fontSize: 14, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = '#f2f9f8'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = '#fff'; }}
                   >
-                    &#8249;
-                  </button>
-                  <span style={{ fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: 15, color: '#0e3b39' }}>{calTitle}</span>
-                  <button
-                    onClick={() => { const dt = new Date(calY, calM, 1); setCalMonth(dt.getFullYear() + '-' + pad2(dt.getMonth() + 1)); }}
-                    style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid #e2efec', background: '#f7fbfa', cursor: 'pointer', color: '#0e756c', fontSize: 15 }}
-                  >
-                    &#8250;
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                      <rect x="3" y="4.5" width="18" height="16" rx="2.5" /><path d="M3 9h18M8 2.5v4M16 2.5v4" />
+                    </svg>
+                    Custom
                   </button>
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 2, color: '#98b0ab', fontSize: 11, fontWeight: 700, textAlign: 'center', marginBottom: 4 }}>
-                  {['S','M','T','W','T','F','S'].map((d, i) => <span key={i}>{d}</span>)}
-                </div>
-                {calWeeks.map((week, wi) => (
-                  <div key={wi} style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 2 }}>
-                    {week.map((cell) => (
-                      cell.blank
-                        ? <div key={cell.key} style={{ padding: 0 }} />
-                        : <div
-                            key={cell.key}
-                            onClick={() => selectDay(cell.date)}
-                            style={{
-                              cursor: 'pointer', textAlign: 'center', padding: '9px 0', borderRadius: 9,
-                              fontSize: 13.5, fontWeight: cell.fw, background: cell.bg, color: cell.col,
-                              border: cell.border,
-                            }}
-                          >
-                            {cell.label}
-                          </div>
-                    ))}
+              ) : (
+                <div>
+                  <button onClick={() => setShowCustom(false)}
+                    style={{ border: 0, background: 'none', color: '#0e756c', fontWeight: 700, fontSize: 13, cursor: 'pointer', padding: '0 0 10px', display: 'flex', alignItems: 'center', gap: 4 }}
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5M12 5l-7 7 7 7" /></svg>
+                    Back
+                  </button>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                    <button
+                      onClick={() => { const dt = new Date(calY, calM - 2, 1); setCalMonth(dt.getFullYear() + '-' + pad2(dt.getMonth() + 1)); }}
+                      style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid #e2efec', background: '#f7fbfa', cursor: 'pointer', color: '#0e756c', fontSize: 15 }}
+                    >&#8249;</button>
+                    <span style={{ fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: 15, color: '#0e3b39' }}>{calTitle}</span>
+                    <button
+                      onClick={() => { const dt = new Date(calY, calM, 1); setCalMonth(dt.getFullYear() + '-' + pad2(dt.getMonth() + 1)); }}
+                      style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid #e2efec', background: '#f7fbfa', cursor: 'pointer', color: '#0e756c', fontSize: 15 }}
+                    >&#8250;</button>
                   </div>
-                ))}
-              </div>
-              <div style={{ flex: '0 0 150px', display: 'flex', flexDirection: 'column', gap: 4, minWidth: 140 }}>
-                <button onClick={() => applyPreset('today')} style={{ textAlign: 'left', padding: '9px 12px', borderRadius: 8, border: 0, background: '#f2f9f8', color: '#0e756c', fontWeight: 700, fontSize: 13.5, cursor: 'pointer' }}>Today</button>
-                <button onClick={() => applyPreset('week')} style={{ textAlign: 'left', padding: '9px 12px', borderRadius: 8, border: 0, background: '#f2f9f8', color: '#0e756c', fontWeight: 700, fontSize: 13.5, cursor: 'pointer' }}>Week till date</button>
-                <button onClick={() => applyPreset('month')} style={{ textAlign: 'left', padding: '9px 12px', borderRadius: 8, border: 0, background: '#fff', color: '#33534f', fontWeight: 600, fontSize: 13.5, cursor: 'pointer' }}>Month till date</button>
-                <button onClick={() => applyPreset('last30')} style={{ textAlign: 'left', padding: '9px 12px', borderRadius: 8, border: 0, background: '#fff', color: '#33534f', fontWeight: 600, fontSize: 13.5, cursor: 'pointer' }}>Last 30 days</button>
-                <button onClick={() => applyPreset('last7')} style={{ textAlign: 'left', padding: '9px 12px', borderRadius: 8, border: 0, background: '#fff', color: '#33534f', fontWeight: 600, fontSize: 13.5, cursor: 'pointer' }}>Last 7 days</button>
-                <button onClick={() => applyPreset('all')} style={{ textAlign: 'left', padding: '9px 12px', borderRadius: 8, border: 0, background: '#fff', color: '#33534f', fontWeight: 600, fontSize: 13.5, cursor: 'pointer' }}>All time</button>
-                <div style={{ display: 'flex', gap: 8, marginTop: 'auto', paddingTop: 10 }}>
-                  <button onClick={() => setShowRange(false)} style={{ flex: 1, padding: 9, borderRadius: 9, border: '1px solid #d6e7e3', background: '#fff', color: '#5c7a76', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Cancel</button>
-                  <button onClick={applyRange} style={{ flex: 1, padding: 9, borderRadius: 9, border: 0, background: '#0e756c', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Apply</button>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 2, color: '#98b0ab', fontSize: 11, fontWeight: 700, textAlign: 'center', marginBottom: 4 }}>
+                    {['S','M','T','W','T','F','S'].map((d, i) => <span key={i}>{d}</span>)}
+                  </div>
+                  {calWeeks.map((week, wi) => (
+                    <div key={wi} style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 2 }}>
+                      {week.map((cell) => (
+                        cell.blank
+                          ? <div key={cell.key} style={{ padding: 0 }} />
+                          : <div
+                              key={cell.key}
+                              onClick={() => selectDay(cell.date)}
+                              style={{
+                                cursor: 'pointer', textAlign: 'center', padding: '9px 0', borderRadius: 9,
+                                fontSize: 13.5, fontWeight: cell.fw, background: cell.bg, color: cell.col,
+                                border: cell.border,
+                              }}
+                            >
+                              {cell.label}
+                            </div>
+                      ))}
+                    </div>
+                  ))}
+                  {tmpStart && (
+                    <p style={{ fontSize: 12.5, color: '#5c7a76', marginTop: 10, textAlign: 'center' }}>
+                      {fmtDateShort(tmpStart)}{tmpEnd && tmpEnd !== tmpStart ? ' – ' + fmtDateShort(tmpEnd) : ''}
+                    </p>
+                  )}
+                  <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                    <button onClick={() => setShowRange(false)} style={{ flex: 1, padding: 10, borderRadius: 9, border: '1px solid #d6e7e3', background: '#fff', color: '#5c7a76', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Cancel</button>
+                    <button onClick={applyRange} disabled={!tmpStart} style={{ flex: 1, padding: 10, borderRadius: 9, border: 0, background: '#0e756c', color: '#fff', fontWeight: 700, fontSize: 13, cursor: tmpStart ? 'pointer' : 'default', opacity: tmpStart ? 1 : 0.5 }}>Apply</button>
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           )}
         </div>
