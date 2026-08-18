@@ -49,40 +49,42 @@ function CalendarPicker({ selected, onSelect, apptDatesMap }) {
   return (
     <div style={{
       background: '#fff', border: '1px solid #dfece9', borderRadius: 18,
-      padding: '16px 14px 12px', userSelect: 'none',
+      padding: '14px 10px 10px', userSelect: 'none',
     }}>
       {/* Month/year nav */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, padding: '0 4px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, padding: '0 2px' }}>
         <button onClick={prevMonth} style={{
-          ...TOUCH_BTN, width: 36, height: 36, borderRadius: 10, border: '1px solid #dfece9',
-          background: '#f2f9f8', color: '#0e756c', fontSize: 16, cursor: 'pointer', padding: 0,
+          width: 34, height: 34, borderRadius: 10, border: '1px solid #dfece9',
+          background: '#f2f9f8', color: '#0e756c', fontSize: 18, cursor: 'pointer',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0,
         }}>‹</button>
-        <span style={{ fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: 16, color: '#0e3b39' }}>
+        <span style={{ fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: 15.5, color: '#0e3b39' }}>
           {MONTH_NAMES[viewMonth]} {viewYear}
         </span>
         <button onClick={nextMonth} style={{
-          ...TOUCH_BTN, width: 36, height: 36, borderRadius: 10, border: '1px solid #dfece9',
-          background: '#f2f9f8', color: '#0e756c', fontSize: 16, cursor: 'pointer', padding: 0,
+          width: 34, height: 34, borderRadius: 10, border: '1px solid #dfece9',
+          background: '#f2f9f8', color: '#0e756c', fontSize: 18, cursor: 'pointer',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0,
         }}>›</button>
       </div>
 
       {/* Day headers */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 0 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)' }}>
         {DAY_LABELS.map((d) => (
           <div key={d} style={{
-            textAlign: 'center', fontSize: 11.5, fontWeight: 700, color: '#98b0ab',
-            padding: '4px 0 8px', letterSpacing: '.04em', textTransform: 'uppercase',
+            textAlign: 'center', fontSize: 11, fontWeight: 700, color: '#98b0ab',
+            padding: '2px 0 6px', letterSpacing: '.04em', textTransform: 'uppercase',
           }}>{d}</div>
         ))}
       </div>
 
       {/* Day cells */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 1 }}>
         {cells.map((day, i) => {
           if (day === null) return <div key={'e' + i} />;
           const ymd = toYmd(new Date(viewYear, viewMonth, day));
           const isSelected = ymd === selected;
-          const isToday = ymd === todayStr;
+          const isToday = ymd === todayStr && !isSelected;
           const apptCount = (apptDatesMap || {})[ymd] || 0;
 
           return (
@@ -90,15 +92,16 @@ function CalendarPicker({ selected, onSelect, apptDatesMap }) {
               key={day}
               onClick={() => onSelect(ymd)}
               style={{
-                ...TOUCH_BTN, width: '100%', aspectRatio: '1', border: 0, borderRadius: 12,
-                background: isSelected ? '#0e756c' : 'transparent',
+                width: '100%', height: 44, border: 0,
+                borderRadius: 10,
+                background: isSelected ? '#0e756c' : isToday ? '#eef4f3' : 'transparent',
                 cursor: 'pointer', padding: 0,
                 display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                gap: 2, position: 'relative',
+                gap: 1,
               }}
             >
               <span style={{
-                fontSize: 14.5, fontWeight: isSelected || isToday ? 700 : 500,
+                fontSize: 14, fontWeight: isSelected || isToday ? 700 : 400,
                 color: isSelected ? '#fff' : isToday ? '#0e756c' : '#0e3b39',
                 lineHeight: 1,
               }}>{day}</span>
@@ -106,20 +109,24 @@ function CalendarPicker({ selected, onSelect, apptDatesMap }) {
                 <span style={{
                   width: 5, height: 5, borderRadius: '50%',
                   background: isSelected ? '#ffd666' : '#e8a912',
-                  display: 'block', flexShrink: 0,
+                  display: 'block',
                 }} />
               )}
-              {apptCount === 0 && <span style={{ width: 5, height: 5, display: 'block', flexShrink: 0 }} />}
+              {apptCount === 0 && <span style={{ width: 5, height: 5, display: 'block' }} />}
             </button>
           );
         })}
       </div>
 
-      {/* Today shortcut */}
-      <div style={{ display: 'flex', justifyContent: 'center', marginTop: 8 }}>
+      {/* Today + legend row */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 8, padding: '0 2px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+          <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#e8a912', display: 'inline-block' }} />
+          <span style={{ fontSize: 11.5, color: '#98b0ab' }}>Appointments booked</span>
+        </div>
         <button onClick={goToday} style={{
-          ...TOUCH_BTN, padding: '7px 16px', borderRadius: 10, border: '1px solid #dfece9',
-          background: '#f2f9f8', color: '#0e756c', fontWeight: 700, fontSize: 13, cursor: 'pointer',
+          padding: '6px 14px', borderRadius: 8, border: '1px solid #dfece9',
+          background: '#f2f9f8', color: '#0e756c', fontWeight: 700, fontSize: 12.5, cursor: 'pointer',
         }}>Today</button>
       </div>
     </div>
@@ -128,10 +135,6 @@ function CalendarPicker({ selected, onSelect, apptDatesMap }) {
 
 export default function Appointments({ appts, hasAppts, noAppts, apptDate, onSetApptDate, onApptToday, apptDateLabel, apptDatesMap }) {
   const [showCal, setShowCal] = useState(false);
-
-  const handleDateSelect = (ymd) => {
-    onSetApptDate(ymd);
-  };
 
   return (
     <div>
@@ -163,12 +166,8 @@ export default function Appointments({ appts, hasAppts, noAppts, apptDate, onSet
       </div>
 
       {showCal && (
-        <div style={{ marginBottom: 16, maxWidth: 360 }}>
-          <CalendarPicker selected={apptDate} onSelect={handleDateSelect} apptDatesMap={apptDatesMap} />
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, padding: '0 4px' }}>
-            <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#e8a912', display: 'inline-block', flexShrink: 0 }} />
-            <span style={{ fontSize: 12.5, color: '#5c7a76' }}>Has scheduled appointments</span>
-          </div>
+        <div style={{ marginBottom: 16 }}>
+          <CalendarPicker selected={apptDate} onSelect={onSetApptDate} apptDatesMap={apptDatesMap} />
         </div>
       )}
 
