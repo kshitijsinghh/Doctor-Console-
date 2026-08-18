@@ -346,30 +346,39 @@ function action_saveIntake_(body) {
       var settings = settingsMap_(settingsSh);
       var seq = Number(settings.seq || 0) + 1;
       patientId = 'P' + ('0000' + seq).slice(-4);
-      patientsSh.appendRow([patientId, mobile, name, age, gender, new Date().toISOString()]);
+      var pIdx = headerIndex_(patientsSh);
+      var pNumCols = patientsSh.getLastColumn();
+      var pNewRow = new Array(pNumCols).fill('');
+      var setPCol = function (key, val) { if (pIdx[key] !== undefined) pNewRow[pIdx[key]] = val; };
+      setPCol('patientId', patientId);
+      setPCol('mobile', mobile);
+      setPCol('name', name);
+      setPCol('age', age);
+      setPCol('gender', gender);
+      setPCol('createdAt', new Date().toISOString());
+      patientsSh.appendRow(pNewRow);
       setSetting_(settingsSh, 'seq', seq);
     }
 
     var vData = sheetRows_(visitsSh);
+    var vIdx = headerIndex_(visitsSh);
     var visitNo = 1;
     vData.rows.forEach(function (row) {
       if (row[vData.idx.patientId] === patientId) visitNo++;
     });
     var visitId = patientId + '_' + visitNo;
-    var blank = {};
-    VISITS_HEADERS.forEach(function (h) { blank[h] = ''; });
-    var newRow = VISITS_HEADERS.map(function (h) {
-      if (h === 'visitId') return visitId;
-      if (h === 'patientId') return patientId;
-      if (h === 'visitNo') return visitNo;
-      if (h === 'date') return date;
-      if (h === 'createdAt') return new Date().toISOString();
-      if (h === 'done') return false;
-      if (h === 'patientName') return name;
-      if (h === 'patientGender') return gender;
-      if (h === 'patientAge') return age;
-      return '';
-    });
+    var numCols = visitsSh.getLastColumn();
+    var newRow = new Array(numCols).fill('');
+    var setCol = function (key, val) { if (vIdx[key] !== undefined) newRow[vIdx[key]] = val; };
+    setCol('visitId', visitId);
+    setCol('patientId', patientId);
+    setCol('visitNo', visitNo);
+    setCol('date', date);
+    setCol('createdAt', new Date().toISOString());
+    setCol('done', false);
+    setCol('patientName', name);
+    setCol('patientGender', gender);
+    setCol('patientAge', age);
     visitsSh.appendRow(newRow);
 
     var snap = readSnapshot_();
