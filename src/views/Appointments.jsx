@@ -133,8 +133,7 @@ function CalendarPicker({ selected, onSelect, apptDatesMap }) {
   );
 }
 
-export default function Appointments({ appts, hasAppts, noAppts, apptDate, onSetApptDate, onApptToday, apptDateLabel, apptDatesMap }) {
-  const [showCal, setShowCal] = useState(false);
+export default function Appointments({ appts, hasAppts, noAppts, apptDate, onSetApptDate, onApptToday, apptDateLabel, apptDatesMap, showCal, onSetShowCal }) {
 
   return (
     <div>
@@ -148,7 +147,7 @@ export default function Appointments({ appts, hasAppts, noAppts, apptDate, onSet
           </p>
         </div>
         <button
-          onClick={() => setShowCal(!showCal)}
+          onClick={() => onSetShowCal(!showCal)}
           style={{
             ...TOUCH_BTN, padding: '10px 14px', borderRadius: 10, border: '1px solid #cfe3df',
             background: showCal ? '#0e756c' : '#fff', color: showCal ? '#fff' : '#0e756c',

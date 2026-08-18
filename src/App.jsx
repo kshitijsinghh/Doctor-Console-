@@ -68,6 +68,7 @@ export default function App({ user, onLogout }) {
   const [dateFrom, setDateFrom] = useState(firstOfMonth());
   const [dateTo, setDateTo] = useState(today());
   const [apptDate, setApptDate] = useState(today());
+  const [showApptCal, setShowApptCal] = useState(false);
 
   const [form, setForm] = useState({ mobile: '', name: '', age: '', gender: '', date: today() });
   const [lookupState, setLookupState] = useState('');
@@ -623,6 +624,7 @@ export default function App({ user, onLogout }) {
             apptDate={apptDate} onSetApptDate={setApptDate}
             onApptToday={() => setApptDate(today())} apptDateLabel={apptDateLabel}
             apptDatesMap={apptDatesMap}
+            showCal={showApptCal} onSetShowCal={setShowApptCal}
           />
         )}
 
@@ -682,7 +684,7 @@ export default function App({ user, onLogout }) {
         )}
       </main>
 
-      {(view === 'dashboard' || view === 'appointments' || view === 'patients') && (
+      {(view === 'dashboard' || view === 'appointments' || view === 'patients') && !(view === 'appointments' && showApptCal) && (
         <button
           onClick={goIntake}
           title="New visit"
