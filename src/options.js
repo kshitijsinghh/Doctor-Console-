@@ -42,6 +42,6 @@ export const TOOTH_NUMBERS_KID = [
 
 export const PATIENT_TYPES = ['Adult', 'Kid'];
 
-export const PAYMENT_MODES = ['UPI', 'Debit Card', 'Credit Card'];
+export const PAYMENT_MODES = ['Cash', 'UPI', 'Debit Card', 'Credit Card'];
 export const YES_NO = ['Yes', 'No'];
 export const TREATMENT_STAGES = ['Complete', 'In Progress', 'Follow Up Pending'];

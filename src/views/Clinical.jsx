@@ -179,6 +179,37 @@ function MultiSelect({ value, options, onChange, placeholder, disabled, allowOth
     </div>
   );
 }
+function TimePicker12h({ value, onChange, disabled }) {
+  let hr = '', min = '', ap = 'AM';
+  if (value) {
+    const m = value.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+    if (m) { hr = m[1]; min = m[2]; ap = m[3].toUpperCase(); }
+  }
+  const build = (h, m, a) => {
+    if (!h) return '';
+    return h + ':' + (m || '00').padStart(2, '0') + ' ' + a;
+  };
+  const hours = Array.from({ length: 12 }, (_, i) => String(i + 1));
+  const mins = Array.from({ length: 12 }, (_, i) => String(i * 5).padStart(2, '0'));
+  const selStyle = { ...fieldStyle, flex: 1, minWidth: 0, ...(disabled ? roStyle : {}) };
+  return (
+    <div style={{ display: 'flex', gap: 8 }}>
+      <select value={hr} onChange={(e) => onChange(build(e.target.value, min, ap))} style={selStyle} disabled={disabled}>
+        <option value="">Hr</option>
+        {hours.map((h) => <option key={h} value={h}>{h}</option>)}
+      </select>
+      <select value={min} onChange={(e) => onChange(build(hr, e.target.value, ap))} style={selStyle} disabled={disabled}>
+        <option value="">Min</option>
+        {mins.map((m) => <option key={m} value={m}>{m}</option>)}
+      </select>
+      <select value={ap} onChange={(e) => onChange(build(hr, min, e.target.value))} style={selStyle} disabled={disabled}>
+        <option value="AM">AM</option>
+        <option value="PM">PM</option>
+      </select>
+    </div>
+  );
+}
+
 function inr(n) { return '₹' + Math.round(n).toLocaleString('en-IN'); }
 function fmtDate(d) {
   if (!d) return '—';
@@ -187,6 +218,7 @@ function fmtDate(d) {
 }
 function fmtTime(t) {
   if (!t) return '—';
+  if (/AM|PM/i.test(t)) return t;
   const [h, m] = t.split(':').map(Number);
   if (isNaN(h)) return '—';
   const ampm = h >= 12 ? 'PM' : 'AM';
@@ -197,7 +229,7 @@ function dash(x) { return (x === undefined || x === null || x === '') ? '—' : 
 
 export default function Clinical({
   cur, hasHistory, cform, onSetField,
-  showTreatmentOther, prevPending, prevPendingLabel, amountToCollect, amountToCollectLabel, computedBalance, computedBalanceLabel, balanceColor,
+  showTreatmentOther, showAdvisedTreatmentOther, prevPending, prevPendingLabel, amountToCollect, amountToCollectLabel, computedBalance, computedBalanceLabel, balanceColor,
   hasPending, noPending, pendingTotalLabel, pendingList,
   hasQr, noQr, qrUrl, qrUploadLabel, onUploadQr,
   showQr, onOpenQr, onCloseQr,
@@ -221,12 +253,15 @@ export default function Clinical({
     if (dv) {
       const c = dv.clinical || {};
       const trd = (/Other/.test(c.treatment) && c.treatmentOther) ? c.treatmentOther : c.treatment;
+      const advTrd = (/Other/.test(c.advisedTreatment) && c.advisedTreatmentOther) ? c.advisedTreatmentOther : c.advisedTreatment;
       detail = {
         title: dv.visitId, dateLabel: fmtDate(dv.date), name: dp.name,
         rows: [
           { k: 'Patient type', v: dash(c.patientType) },
+          { k: 'Medical history', v: dash(c.medicalHistory) },
           { k: 'Chief complaint', v: dash(c.chiefComplaint) }, { k: 'Description', v: dash(c.chiefDescription) },
-          { k: 'Treatment group', v: dash(c.treatmentGroup) }, { k: 'Treatment', v: dash(trd) },
+          { k: 'Treatment group', v: dash(c.treatmentGroup) }, { k: 'Current treatment', v: dash(trd) },
+          { k: 'Advised treatment', v: dash(advTrd) },
           { k: 'Tooth number', v: dash(c.toothNumber) },
           { k: 'Treatment cost', v: c.treatmentCost ? inr(num(c.treatmentCost)) : '—' },
           { k: 'Amount paid', v: c.amountPaid ? inr(num(c.amountPaid)) : '—' },
@@ -364,6 +399,14 @@ export default function Clinical({
               {PATIENT_TYPES.map((pt) => <option key={pt} value={pt}>{pt}</option>)}
             </select>
           </div>
+          <div style={{ gridColumn: '1 / -1' }}>
+            <label style={labelStyle}>Medical history</label>
+            <textarea
+              value={cform.medicalHistory} onChange={(e) => onSetField('medicalHistory', e.target.value)}
+              placeholder="Known medical conditions, allergies, medications…"
+              style={{ ...fieldStyle, minHeight: 68, resize: 'vertical', ...(readOnly ? roStyle : {}) }} disabled={readOnly}
+            />
+          </div>
           <div>
             <label style={labelStyle}>Chief complaint</label>
             <MultiSelect
@@ -388,10 +431,18 @@ export default function Clinical({
             />
           </div>
           <div>
-            <label style={labelStyle}>Treatment</label>
+            <label style={labelStyle}>Current treatment</label>
             <MultiSelect
               value={cform.treatment} options={TREATMENTS}
               onChange={(v) => onSetField('treatment', v)} placeholder="Select…" disabled={readOnly}
+              allowOther
+            />
+          </div>
+          <div>
+            <label style={labelStyle}>Advised treatment</label>
+            <MultiSelect
+              value={cform.advisedTreatment} options={TREATMENTS}
+              onChange={(v) => onSetField('advisedTreatment', v)} placeholder="Select…" disabled={readOnly}
               allowOther
             />
           </div>
@@ -538,7 +589,7 @@ export default function Clinical({
               </div>
               <div>
                 <label style={labelStyle}>Next appointment time</label>
-                <input type="time" value={cform.nextAppointmentTime} onChange={(e) => onSetField('nextAppointmentTime', e.target.value)} style={{ ...fieldStyle, ...(readOnly ? roStyle : {}) }} disabled={readOnly} />
+                <TimePicker12h value={cform.nextAppointmentTime} onChange={(v) => onSetField('nextAppointmentTime', v)} disabled={readOnly} />
               </div>
             </>
           )}

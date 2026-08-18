@@ -9,6 +9,7 @@ function fmtDate(d) {
 }
 function fmtTime(t) {
   if (!t) return '';
+  if (/AM|PM/i.test(t)) return t;
   const [h, m] = t.split(':').map(Number);
   return (h % 12 || 12) + ':' + String(m).padStart(2, '0') + ' ' + (h >= 12 ? 'PM' : 'AM');
 }
@@ -24,10 +25,12 @@ function buildDetailRows(v) {
   const rows = [];
   const add = (k, val) => { if (val) rows.push({ k, v: val }); };
   add('Date', fmtDate(v.date));
+  add('Medical history', c.medicalHistory);
   add('Chief complaint', c.chiefComplaint);
   add('Description', c.chiefDescription);
   add('Treatment group', c.treatmentGroup);
-  add('Treatment', /Other/.test(c.treatment) && c.treatmentOther ? c.treatmentOther : c.treatment);
+  add('Current treatment', /Other/.test(c.treatment) && c.treatmentOther ? c.treatmentOther : c.treatment);
+  add('Advised treatment', /Other/.test(c.advisedTreatment) && c.advisedTreatmentOther ? c.advisedTreatmentOther : c.advisedTreatment);
   if (num(c.treatmentCost)) add('Treatment cost', inr(num(c.treatmentCost)));
   if (num(c.amountPaid)) add('Amount paid', inr(num(c.amountPaid)));
   if (c.balanceDue !== undefined && c.balanceDue !== '') add('Balance due', inr(num(c.balanceDue)));

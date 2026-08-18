@@ -33,7 +33,8 @@ var QR_FOLDER_NAME = 'Clinic Console QR';
 var PATIENTS_HEADERS = ['patientId', 'mobile', 'name', 'age', 'gender', 'createdAt'];
 var VISITS_HEADERS = [
   'visitId', 'patientId', 'visitNo', 'date', 'createdAt', 'done',
-  'patientType', 'chiefDescription', 'chiefComplaint', 'treatmentGroup', 'treatment', 'toothNumber', 'treatmentOther',
+  'patientName', 'patientGender', 'patientAge',
+  'patientType', 'medicalHistory', 'chiefDescription', 'chiefComplaint', 'treatmentGroup', 'treatment', 'advisedTreatment', 'toothNumber', 'treatmentOther', 'advisedTreatmentOther',
   'treatmentCost', 'amountPaid', 'balanceDue',
   'paymentMode', 'paymentStatus', 'treatmentStage', 'googleReviewTaken',
   'nextAppointment', 'nextAppointmentTime', 'comments', 'calendarEventId',
@@ -186,12 +187,15 @@ function readSnapshot_() {
       done: v.done === true || v.done === 'TRUE' || v.done === 'true',
       clinical: {
         patientType: v.patientType || '',
+        medicalHistory: v.medicalHistory || '',
         chiefComplaint: v.chiefComplaint || '',
         chiefDescription: v.chiefDescription || '',
         treatmentGroup: v.treatmentGroup || '',
         treatment: v.treatment || '',
+        advisedTreatment: v.advisedTreatment || '',
         toothNumber: v.toothNumber instanceof Date ? '' : String(v.toothNumber || ''),
         treatmentOther: v.treatmentOther || '',
+        advisedTreatmentOther: v.advisedTreatmentOther || '',
         treatmentCost: v.treatmentCost === '' ? '' : String(v.treatmentCost),
         amountPaid: v.amountPaid === '' ? '' : String(v.amountPaid),
         balanceDue: v.balanceDue === '' ? '' : String(v.balanceDue),
@@ -255,9 +259,18 @@ function syncCalendarEvent_(visitId, patientName, nextAppt, nextApptTime, treatm
 
   var h = 9, m = 0;
   if (nextApptTime) {
-    var p = nextApptTime.split(':');
-    h = parseInt(p[0], 10) || 9;
-    m = parseInt(p[1], 10) || 0;
+    var ampmMatch = nextApptTime.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+    if (ampmMatch) {
+      h = parseInt(ampmMatch[1], 10);
+      m = parseInt(ampmMatch[2], 10) || 0;
+      var isPM = ampmMatch[3].toUpperCase() === 'PM';
+      if (isPM && h !== 12) h += 12;
+      if (!isPM && h === 12) h = 0;
+    } else {
+      var p = nextApptTime.split(':');
+      h = parseInt(p[0], 10) || 9;
+      m = parseInt(p[1], 10) || 0;
+    }
   }
   var start = new Date(nextAppt + 'T' + ('0' + h).slice(-2) + ':' + ('0' + m).slice(-2) + ':00');
   var end = new Date(start.getTime() + 30 * 60000);
@@ -352,6 +365,9 @@ function action_saveIntake_(body) {
       if (h === 'date') return date;
       if (h === 'createdAt') return new Date().toISOString();
       if (h === 'done') return false;
+      if (h === 'patientName') return name;
+      if (h === 'patientGender') return gender;
+      if (h === 'patientAge') return age;
       return '';
     });
     visitsSh.appendRow(newRow);
@@ -402,12 +418,15 @@ function action_saveClinical_(body) {
     var r = targetRow + 2;
     var fields = {
       patientType: cform.patientType || '',
+      medicalHistory: cform.medicalHistory || '',
       chiefComplaint: cform.chiefComplaint || '',
       chiefDescription: cform.chiefDescription || '',
       treatmentGroup: cform.treatmentGroup || '',
       treatment: cform.treatment || '',
+      advisedTreatment: cform.advisedTreatment || '',
       toothNumber: cform.toothNumber || '',
       treatmentOther: cform.treatmentOther || '',
+      advisedTreatmentOther: cform.advisedTreatmentOther || '',
       treatmentCost: cform.treatmentCost || '',
       amountPaid: cform.amountPaid || '',
       balanceDue: String(balanceDue),
@@ -426,21 +445,28 @@ function action_saveClinical_(body) {
       cell.setValue(fields[key]);
     }
 
+    var patientsSh = ensureSheet_(PATIENTS_SHEET, PATIENTS_HEADERS);
+    var pData = sheetRows_(patientsSh);
+    var patientName = '', patientGender = '', patientAge = '';
+    for (var pi = 0; pi < pData.rows.length; pi++) {
+      if (pData.rows[pi][pData.idx.patientId] === patientId) {
+        patientName = pData.rows[pi][pData.idx.name] || '';
+        patientGender = pData.rows[pi][pData.idx.gender] || '';
+        patientAge = pData.rows[pi][pData.idx.age];
+        if (patientAge === undefined || patientAge === null) patientAge = '';
+        break;
+      }
+    }
+    if (vData.idx.patientName !== undefined) visitsSh.getRange(r, vData.idx.patientName + 1).setValue(patientName);
+    if (vData.idx.patientGender !== undefined) visitsSh.getRange(r, vData.idx.patientGender + 1).setValue(patientGender);
+    if (vData.idx.patientAge !== undefined) visitsSh.getRange(r, vData.idx.patientAge + 1).setValue(String(patientAge));
+
     try {
       var shouldHaveEvent = (fields.treatmentStage === 'In Progress' || fields.treatmentStage === 'Follow Up Pending') && fields.nextAppointment;
       var existingEventId = (vData.idx.calendarEventId !== undefined)
         ? String(vData.rows[targetRow][vData.idx.calendarEventId] || '') : '';
 
       if (shouldHaveEvent || existingEventId) {
-        var patientsSh = ensureSheet_(PATIENTS_SHEET, PATIENTS_HEADERS);
-        var pData = sheetRows_(patientsSh);
-        var patientName = '';
-        for (var pi = 0; pi < pData.rows.length; pi++) {
-          if (pData.rows[pi][pData.idx.patientId] === patientId) {
-            patientName = pData.rows[pi][pData.idx.name] || '';
-            break;
-          }
-        }
         var newEventId = syncCalendarEvent_(
           visitId, patientName,
           shouldHaveEvent ? fields.nextAppointment : '',

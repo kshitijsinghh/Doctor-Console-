@@ -34,6 +34,7 @@ function inr(n) {
 }
 function fmtTime(t) {
   if (!t) return '—';
+  if (/AM|PM/i.test(t)) return t;
   const [h, m] = t.split(':').map(Number);
   const ampm = h >= 12 ? 'PM' : 'AM';
   const hr = h % 12 || 12;
@@ -41,7 +42,7 @@ function fmtTime(t) {
 }
 function blankClinical() {
   return {
-    patientType: '', chiefComplaint: '', chiefDescription: '', treatmentGroup: '', treatment: '', toothNumber: '', treatmentOther: '',
+    patientType: '', medicalHistory: '', chiefComplaint: '', chiefDescription: '', treatmentGroup: '', treatment: '', advisedTreatment: '', toothNumber: '', treatmentOther: '', advisedTreatmentOther: '',
     treatmentCost: '', amountPaid: '', balanceDue: '', paymentMode: '',
     treatmentStage: '', googleReviewTaken: '', nextAppointment: '', nextAppointmentTime: '', comments: '',
   };
@@ -655,6 +656,7 @@ export default function App({ user, onLogout }) {
             cur={cur} hasHistory={history.length > 0}
             cform={cform} onSetField={(k, v) => setCform((f) => ({ ...f, [k]: v }))}
             showTreatmentOther={/Other/.test(cform.treatment)}
+            showAdvisedTreatmentOther={/Other/.test(cform.advisedTreatment)}
             prevPending={prevPending} prevPendingLabel={inr(prevPending)}
             amountToCollect={num(cform.treatmentCost) + prevPending}
             amountToCollectLabel={inr(num(cform.treatmentCost) + prevPending)}
