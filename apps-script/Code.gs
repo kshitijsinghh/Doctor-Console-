@@ -32,8 +32,8 @@ var QR_FOLDER_NAME = 'Clinic Console QR';
 
 var PATIENTS_HEADERS = ['patientId', 'mobile', 'name', 'age', 'gender', 'createdAt'];
 var VISITS_HEADERS = [
-  'visitId', 'patientId', 'visitNo', 'date', 'createdAt', 'done',
-  'patientName', 'patientGender', 'patientAge',
+  'visitId', 'patientId', 'patientName', 'patientAge', 'patientGender',
+  'visitNo', 'date', 'createdAt', 'done',
   'patientType', 'medicalHistory', 'chiefDescription', 'chiefComplaint', 'treatmentGroup', 'treatment', 'advisedTreatment', 'toothNumber', 'treatmentOther', 'advisedTreatmentOther',
   'treatmentCost', 'amountPaid', 'balanceDue',
   'paymentMode', 'paymentStatus', 'treatmentStage', 'googleReviewTaken',
