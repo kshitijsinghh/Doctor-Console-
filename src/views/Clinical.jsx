@@ -587,10 +587,12 @@ export default function Clinical({
                   </p>
                 )}
               </div>
-              <div>
-                <label style={labelStyle}>Next appointment time</label>
-                <TimePicker12h value={cform.nextAppointmentTime} onChange={(v) => onSetField('nextAppointmentTime', v)} disabled={readOnly} />
-              </div>
+              {cform.nextAppointment && (
+                <div>
+                  <label style={labelStyle}>Next appointment time</label>
+                  <TimePicker12h value={cform.nextAppointmentTime} onChange={(v) => onSetField('nextAppointmentTime', v)} disabled={readOnly} />
+                </div>
+              )}
             </>
           )}
           <div style={{ gridColumn: '1 / -1' }}>
