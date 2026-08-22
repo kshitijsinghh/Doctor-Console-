@@ -650,14 +650,12 @@ export default function Clinical({
             </div>
             <div>
               <label style={labelStyle}>Tooth number</label>
-              <select
+              <MultiSelect
                 value={cform.labToothNumber || cform.toothNumber || ''}
-                onChange={(e) => onSetField('labToothNumber', e.target.value)}
-                style={{ ...fieldStyle, ...(readOnly ? roStyle : {}) }} disabled={readOnly}
-              >
-                <option value="">Select…</option>
-                {(cform.patientType === 'Kid' ? TOOTH_NUMBERS_KID : TOOTH_NUMBERS).map((t) => <option key={t} value={t}>{t}</option>)}
-              </select>
+                options={cform.patientType === 'Kid' ? TOOTH_NUMBERS_KID : TOOTH_NUMBERS}
+                onChange={(v) => onSetField('labToothNumber', v)}
+                placeholder="Select…" disabled={readOnly} searchable
+              />
             </div>
             <div style={{ gridColumn: '1 / -1' }}>
               <label style={labelStyle}>Description</label>
