@@ -37,7 +37,9 @@ var VISITS_HEADERS = [
   'patientType', 'medicalHistory', 'chiefDescription', 'chiefComplaint', 'treatmentGroup', 'treatment', 'advisedTreatment', 'toothNumber', 'treatmentOther', 'advisedTreatmentOther',
   'treatmentCost', 'amountPaid', 'balanceDue',
   'paymentMode', 'paymentStatus', 'treatmentStage', 'googleReviewTaken',
-  'nextAppointment', 'nextAppointmentTime', 'comments', 'calendarEventId',
+  'nextAppointment', 'nextAppointmentTime', 'comments',
+  'labName', 'labToothNumber', 'labDescription',
+  'calendarEventId',
 ];
 
 function doGet(e) {
@@ -206,6 +208,9 @@ function readSnapshot_() {
         nextAppointment: v.nextAppointment instanceof Date ? formatDate_(v.nextAppointment) : String(v.nextAppointment || ''),
         nextAppointmentTime: v.nextAppointmentTime instanceof Date ? Utilities.formatDate(v.nextAppointmentTime, Session.getScriptTimeZone(), 'HH:mm') : String(v.nextAppointmentTime || ''),
         comments: v.comments || '',
+        labName: v.labName || '',
+        labToothNumber: v.labToothNumber || '',
+        labDescription: v.labDescription || '',
       },
     });
   });
@@ -214,12 +219,16 @@ function readSnapshot_() {
     patients[pid].visits.sort(function (a, b) { return (a.no || 0) - (b.no || 0); });
   }
 
+  var labNamesRaw = settings.labNames || '';
+  var labNames = labNamesRaw ? labNamesRaw.split(',').map(function(s) { return s.trim(); }).filter(Boolean) : [];
+
   return {
     ok: true,
     patients: patients,
     order: order,
     seq: Number(settings.seq || 0),
     upiQr: settings.upiQr || '',
+    labNames: labNames,
   };
 }
 
@@ -446,6 +455,9 @@ function action_saveClinical_(body) {
       nextAppointment: cform.nextAppointment || '',
       nextAppointmentTime: cform.nextAppointmentTime || '',
       comments: cform.comments || '',
+      labName: cform.labName || '',
+      labToothNumber: cform.labToothNumber || '',
+      labDescription: cform.labDescription || '',
       done: true,
     };
     for (var key in fields) {

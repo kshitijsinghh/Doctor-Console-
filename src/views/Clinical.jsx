@@ -236,10 +236,12 @@ export default function Clinical({
   savedFlash, onGoBack, onSaveClinical, saving, error,
   apptCountText, showApptCount,
   db, curPatientId,
+  labNames,
   readOnly, onCreateNewVisit,
 }) {
   const [detailVisit, setDetailVisit] = useState(null);
   const [showAllHistory, setShowAllHistory] = useState(false);
+  const [labOpen, setLabOpen] = useState(false);
 
   const remaining = amountToCollect - num(cform.amountPaid);
   const computedStatus = remaining <= 0 ? 'Fully Paid' : (num(cform.amountPaid) > 0 ? 'Partially paid' : 'Not paid');
@@ -271,6 +273,9 @@ export default function Clinical({
           { k: 'Next appointment', v: c.nextAppointment ? fmtDate(c.nextAppointment) : '—' },
           { k: 'Next appointment time', v: fmtTime(c.nextAppointmentTime) },
           { k: 'Comments', v: dash(c.comments) },
+          { k: 'Lab name', v: dash(c.labName) },
+          { k: 'Lab tooth number', v: dash(c.labToothNumber || c.toothNumber) },
+          { k: 'Lab description', v: dash(c.labDescription) },
         ],
       };
     }
@@ -604,6 +609,66 @@ export default function Clinical({
             />
           </div>
         </div>
+      </div>
+
+      {/* Lab Requirements accordion */}
+      <div style={{ background: '#fff', border: '1px solid #dfece9', borderRadius: 18, overflow: 'hidden', marginTop: 16 }}>
+        <button
+          onClick={() => setLabOpen((o) => !o)}
+          style={{
+            width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            gap: 12, padding: '14px 16px', background: '#f7fbfa', cursor: 'pointer',
+            border: 0, textAlign: 'left',
+          }}
+        >
+          <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: 16, color: '#0e3b39' }}>Lab Requirements</span>
+            <span style={{
+              padding: '3px 10px', borderRadius: 100, fontSize: 11.5, fontWeight: 700,
+              background: (cform.labName || cform.labDescription || cform.labToothNumber) ? '#e6f4f2' : '#eef4f3',
+              color: (cform.labName || cform.labDescription || cform.labToothNumber) ? '#0e756c' : '#8aa8a3',
+            }}>
+              {(cform.labName || cform.labDescription || cform.labToothNumber) ? 'Added' : 'Optional'}
+            </span>
+          </span>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#0e756c" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"
+            style={{ transition: 'transform .2s', transform: labOpen ? 'rotate(180deg)' : 'rotate(0)' }}>
+            <path d="M6 9l6 6 6-6" />
+          </svg>
+        </button>
+        {labOpen && (
+          <div style={{ padding: '12px 16px 18px', display: 'grid', gridTemplateColumns: FLUID_GRID_2COL, gap: 14 }}>
+            <div>
+              <label style={labelStyle}>Lab name</label>
+              <select
+                value={cform.labName} onChange={(e) => onSetField('labName', e.target.value)}
+                style={{ ...fieldStyle, ...(readOnly ? roStyle : {}) }} disabled={readOnly}
+              >
+                <option value="">Select…</option>
+                {(labNames || []).map((ln) => <option key={ln} value={ln}>{ln}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={labelStyle}>Tooth number</label>
+              <select
+                value={cform.labToothNumber || cform.toothNumber || ''}
+                onChange={(e) => onSetField('labToothNumber', e.target.value)}
+                style={{ ...fieldStyle, ...(readOnly ? roStyle : {}) }} disabled={readOnly}
+              >
+                <option value="">Select…</option>
+                {(cform.patientType === 'Kid' ? TOOTH_NUMBERS_KID : TOOTH_NUMBERS).map((t) => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+            <div style={{ gridColumn: '1 / -1' }}>
+              <label style={labelStyle}>Description</label>
+              <input
+                value={cform.labDescription} onChange={(e) => onSetField('labDescription', e.target.value)}
+                placeholder="Shade, material, due date…"
+                style={{ ...fieldStyle, ...(readOnly ? roStyle : {}) }} disabled={readOnly}
+              />
+            </div>
+          </div>
+        )}
       </div>
 
       {savedFlash && (

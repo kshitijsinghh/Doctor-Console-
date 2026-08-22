@@ -45,6 +45,7 @@ function blankClinical() {
     patientType: '', medicalHistory: '', chiefComplaint: '', chiefDescription: '', treatmentGroup: '', treatment: '', advisedTreatment: '', toothNumber: '', treatmentOther: '', advisedTreatmentOther: '',
     treatmentCost: '', amountPaid: '', balanceDue: '', paymentMode: '',
     treatmentStage: '', googleReviewTaken: '', nextAppointment: '', nextAppointmentTime: '', comments: '',
+    labName: '', labToothNumber: '', labDescription: '',
   };
 }
 function findAllByMobile(db, mobile) {
@@ -91,7 +92,7 @@ export default function App({ user, onLogout }) {
   const [clinicalReadOnly, setClinicalReadOnly] = useState(false);
 
   function applySnapshot(res) {
-    setDbState({ patients: res.patients, order: res.order, seq: res.seq, upiQr: res.upiQr });
+    setDbState({ patients: res.patients, order: res.order, seq: res.seq, upiQr: res.upiQr, labNames: res.labNames || [] });
   }
 
   async function loadList(isRefresh) {
@@ -678,6 +679,7 @@ export default function App({ user, onLogout }) {
             error={clinicalError}
             apptCountText={apptCountText} showApptCount={!!cform.nextAppointment}
             db={db} curPatientId={curPatientId}
+            labNames={db.labNames || []}
             readOnly={clinicalReadOnly}
             onCreateNewVisit={() => onCreateNewVisitFromAppt(curPatientId)}
           />

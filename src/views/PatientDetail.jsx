@@ -42,6 +42,10 @@ function buildDetailRows(v) {
     add('Next appointment', fmtDate(c.nextAppointment) + (c.nextAppointmentTime ? ' at ' + fmtTime(c.nextAppointmentTime) : ''));
   }
   add('Comments', c.comments);
+  add('Tooth number', c.toothNumber);
+  add('Lab name', c.labName);
+  add('Lab tooth number', c.labToothNumber || c.toothNumber);
+  add('Lab description', c.labDescription);
   return rows;
 }
 
