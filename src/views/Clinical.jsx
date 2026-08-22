@@ -612,13 +612,13 @@ export default function Clinical({
       </div>
 
       {/* Lab Requirements accordion */}
-      <div style={{ background: '#fff', border: '1px solid #dfece9', borderRadius: 18, overflow: 'hidden', marginTop: 16 }}>
+      <div style={{ background: '#fff', border: '1px solid #dfece9', borderRadius: 18, marginTop: 16 }}>
         <button
           onClick={() => setLabOpen((o) => !o)}
           style={{
             width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
             gap: 12, padding: '14px 16px', background: '#f7fbfa', cursor: 'pointer',
-            border: 0, textAlign: 'left',
+            border: 0, textAlign: 'left', borderRadius: labOpen ? '18px 18px 0 0' : 18,
           }}
         >
           <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
