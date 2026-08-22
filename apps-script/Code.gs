@@ -209,7 +209,7 @@ function readSnapshot_() {
         nextAppointmentTime: v.nextAppointmentTime instanceof Date ? Utilities.formatDate(v.nextAppointmentTime, Session.getScriptTimeZone(), 'HH:mm') : String(v.nextAppointmentTime || ''),
         comments: v.comments || '',
         labName: v.labName || '',
-        labToothNumber: v.labToothNumber || '',
+        labToothNumber: v.labToothNumber instanceof Date ? '' : String(v.labToothNumber || ''),
         labDescription: v.labDescription || '',
       },
     });
@@ -462,7 +462,7 @@ function action_saveClinical_(body) {
     };
     for (var key in fields) {
       var cell = visitsSh.getRange(r, vData.idx[key] + 1);
-      if (key === 'toothNumber' || key === 'nextAppointmentTime') cell.setNumberFormat('@');
+      if (key === 'toothNumber' || key === 'labToothNumber' || key === 'nextAppointmentTime') cell.setNumberFormat('@');
       cell.setValue(fields[key]);
     }
 
