@@ -336,7 +336,11 @@ export default function App({ user, onLogout }) {
     setSavingClinical(true);
     setClinicalError('');
     try {
-      const res = await saveClinical({ patientId: curPatientId, visitId: curVisitId, cform });
+      const saveForm = { ...cform };
+      if (!saveForm.labToothNumber && saveForm.toothNumber && (saveForm.labName || saveForm.labDescription)) {
+        saveForm.labToothNumber = saveForm.toothNumber;
+      }
+      const res = await saveClinical({ patientId: curPatientId, visitId: curVisitId, cform: saveForm });
       applySnapshot(res);
       setSavedFlash(true);
       setTimeout(() => {
