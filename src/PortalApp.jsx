@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { fetchList, portalCheckin, savePatientProblem, sendOtp, verifyOtp } from './api';
+import { fetchList, portalCheckin, savePatientProblem } from './api';
+import { auth, RecaptchaVerifier, signInWithPhoneNumber, signOut as firebaseSignOut } from './firebase';
 
 /* ─── helpers ─── */
 function localToday() {
@@ -117,6 +118,8 @@ export default function PortalApp() {
   const [verifyingOtp, setVerifyingOtp] = useState(false);
   const [resendTimer, setResendTimer] = useState(0);
   const otpRefs = useRef([]);
+  const confirmationRef = useRef(null);
+  const recaptchaRef = useRef(null);
 
   /* ── navigation: login | register | home | records | family ── */
   const [view, setView] = useState('login');
@@ -305,18 +308,38 @@ export default function PortalApp() {
     }, 1000);
   }
 
+  function setupRecaptcha() {
+    if (recaptchaRef.current) return recaptchaRef.current;
+    recaptchaRef.current = new RecaptchaVerifier(auth, 'recaptcha-container', { size: 'invisible' });
+    return recaptchaRef.current;
+  }
+
+  function clearRecaptcha() {
+    if (recaptchaRef.current) {
+      try { recaptchaRef.current.clear(); } catch {}
+      recaptchaRef.current = null;
+    }
+  }
+
   async function handleSendOtp() {
     const m = normMobile(loginMobile);
     if (!m || m.length !== 10) { setAuthError('Please enter a valid 10-digit mobile number.'); return; }
     setAuthError('');
     setSendingOtp(true);
     try {
-      await sendOtp({ mobile: m });
+      clearRecaptcha();
+      const verifier = setupRecaptcha();
+      const result = await signInWithPhoneNumber(auth, '+91' + m, verifier);
+      confirmationRef.current = result;
       setOtpStep(true);
       setOtpDigits(['', '', '', '', '', '']);
       startResendTimer();
-    } catch {
-      setAuthError('Failed to send OTP. Please try again.');
+    } catch (err) {
+      clearRecaptcha();
+      const code = err?.code || '';
+      if (code === 'auth/invalid-phone-number') setAuthError('Invalid phone number format.');
+      else if (code === 'auth/too-many-requests') setAuthError('Too many attempts. Please try again later.');
+      else setAuthError('Failed to send OTP. Please try again.');
     } finally {
       setSendingOtp(false);
     }
@@ -327,10 +350,14 @@ export default function PortalApp() {
     setAuthError('');
     setSendingOtp(true);
     try {
-      await sendOtp({ mobile: normMobile(loginMobile) });
+      clearRecaptcha();
+      const verifier = setupRecaptcha();
+      const result = await signInWithPhoneNumber(auth, '+91' + normMobile(loginMobile), verifier);
+      confirmationRef.current = result;
       setOtpDigits(['', '', '', '', '', '']);
       startResendTimer();
     } catch {
+      clearRecaptcha();
       setAuthError('Failed to resend OTP. Please try again.');
     } finally {
       setSendingOtp(false);
@@ -374,14 +401,14 @@ export default function PortalApp() {
     setAuthError('');
     setVerifyingOtp(true);
     try {
-      const res = await verifyOtp({ mobile: m, otp: code });
-      if (res.verified) {
-        onOtpVerified(m);
-      } else {
-        setAuthError('Invalid OTP. Please try again.');
-      }
+      if (!confirmationRef.current) { setAuthError('Session expired. Please send OTP again.'); setVerifyingOtp(false); return; }
+      await confirmationRef.current.confirm(code);
+      onOtpVerified(m);
     } catch (err) {
-      setAuthError(err.message || 'Verification failed. Please try again.');
+      const errCode = err?.code || '';
+      if (errCode === 'auth/invalid-verification-code') setAuthError('Invalid OTP. Please check and try again.');
+      else if (errCode === 'auth/code-expired') setAuthError('OTP has expired. Please resend.');
+      else setAuthError('Verification failed. Please try again.');
     } finally {
       setVerifyingOtp(false);
     }
@@ -418,7 +445,10 @@ export default function PortalApp() {
   }
 
   function signOut() {
+    try { firebaseSignOut(auth); } catch {}
     try { localStorage.removeItem(SESSION_KEY); } catch { /* */ }
+    clearRecaptcha();
+    confirmationRef.current = null;
     setAuthedMobile('');
     setAuthedEmail('');
     setLoginMobile('');
@@ -1630,6 +1660,8 @@ export default function PortalApp() {
           <span style={{ fontSize: 15, color: '#5c7a76', fontWeight: 600 }}>Loading, please wait...</span>
         </div>
       )}
+
+      <div id="recaptcha-container" />
     </div>
   );
 }
