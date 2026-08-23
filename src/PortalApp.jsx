@@ -1,5 +1,5 @@
-import { useEffect, useState, useCallback } from 'react';
-import { fetchList, portalCheckin, savePatientProblem } from './api';
+import { useEffect, useState, useCallback, useRef } from 'react';
+import { fetchList, portalCheckin, savePatientProblem, sendOtp, verifyOtp } from './api';
 
 /* ─── helpers ─── */
 function localToday() {
@@ -58,9 +58,6 @@ const ClipboardIcon = () => (
 const QrIcon = () => (
   <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><path d="M14 14h3v3M20 14v.01M14 20h.01M20 20v-3"/></svg>
 );
-const GoogleLogo = () => (
-  <svg width="19" height="19" viewBox="0 0 48 48" aria-hidden="true"><path fill="#4285F4" d="M45.12 24.5c0-1.56-.14-3.06-.4-4.5H24v8.51h11.84c-.51 2.75-2.06 5.08-4.39 6.64v5.52h7.11c4.16-3.83 6.56-9.47 6.56-16.17z"/><path fill="#34A853" d="M24 46c5.94 0 10.92-1.97 14.56-5.33l-7.11-5.52c-1.97 1.32-4.49 2.1-7.45 2.1-5.73 0-10.58-3.87-12.31-9.07H4.34v5.7C7.96 41.07 15.4 46 24 46z"/><path fill="#FBBC05" d="M11.69 28.18c-.44-1.32-.69-2.73-.69-4.18s.25-2.86.69-4.18v-5.7H4.34C2.85 17.09 2 20.45 2 24s.85 6.91 2.34 9.88l7.35-5.7z"/><path fill="#EA4335" d="M24 10.75c3.23 0 6.13 1.11 8.41 3.29l6.31-6.31C34.91 4.18 29.93 2 24 2 15.4 2 7.96 6.93 4.34 14.12l7.35 5.7c1.73-5.2 6.58-9.07 12.31-9.07z"/></svg>
-);
 const BackArrow = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5M11 18l-6-6 6-6"/></svg>
 );
@@ -89,9 +86,12 @@ const PeopleAddIcon = () => (
   <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M16 19v-1.5a3.5 3.5 0 0 0-3.5-3.5h-5A3.5 3.5 0 0 0 4 17.5V19"/><circle cx="10" cy="8" r="3.2"/><path d="M18 11h4M20 9v4"/></svg>
 );
 
-function getClientId() {
-  return import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
-}
+const GoogleLogo = () => (
+  <svg width="19" height="19" viewBox="0 0 48 48" aria-hidden="true"><path fill="#4285F4" d="M45.12 24.5c0-1.56-.14-3.06-.4-4.5H24v8.51h11.84c-.51 2.75-2.06 5.08-4.39 6.64v5.52h7.11c4.16-3.83 6.56-9.47 6.56-16.17z"/><path fill="#34A853" d="M24 46c5.94 0 10.92-1.97 14.56-5.33l-7.11-5.52c-1.97 1.32-4.49 2.1-7.45 2.1-5.73 0-10.58-3.87-12.31-9.07H4.34v5.7C7.96 41.07 15.4 46 24 46z"/><path fill="#FBBC05" d="M11.69 28.18c-.44-1.32-.69-2.73-.69-4.18s.25-2.86.69-4.18v-5.7H4.34C2.85 17.09 2 20.45 2 24s.85 6.91 2.34 9.88l7.35-5.7z"/><path fill="#EA4335" d="M24 10.75c3.23 0 6.13 1.11 8.41 3.29l6.31-6.31C34.91 4.18 29.93 2 24 2 15.4 2 7.96 6.93 4.34 14.12l7.35 5.7c1.73-5.2 6.58-9.07 12.31-9.07z"/></svg>
+);
+const PhoneIcon = () => (
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="1" width="14" height="22" rx="3"/><path d="M12 18h.01"/></svg>
+);
 
 /* ═══════════════════════════════════════════
    PortalApp — Patient Portal (all in one)
@@ -104,9 +104,19 @@ export default function PortalApp() {
   const [refreshing, setRefreshing] = useState(false);
 
   /* ── auth ── */
-  const [email, setEmail] = useState('');
+  const [authedMobile, setAuthedMobile] = useState('');
+  const [authedEmail, setAuthedEmail] = useState('');
   const [authChecking, setAuthChecking] = useState(false);
   const [authError, setAuthError] = useState('');
+
+  /* ── OTP state ── */
+  const [loginMobile, setLoginMobile] = useState('');
+  const [otpStep, setOtpStep] = useState(false);
+  const [otpDigits, setOtpDigits] = useState(['', '', '', '', '', '']);
+  const [sendingOtp, setSendingOtp] = useState(false);
+  const [verifyingOtp, setVerifyingOtp] = useState(false);
+  const [resendTimer, setResendTimer] = useState(0);
+  const otpRefs = useRef([]);
 
   /* ── navigation: login | register | home | records | family ── */
   const [view, setView] = useState('login');
@@ -165,29 +175,54 @@ export default function PortalApp() {
       const raw = localStorage.getItem(SESSION_KEY);
       if (!raw) return;
       const s = JSON.parse(raw);
-      if (!s || !s.email) return;
-      setEmail(s.email);
-      const found = db.order.find(id => (db.patients[id].email || '').toLowerCase() === s.email.toLowerCase());
-      if (found) {
-        setMyPatientId(found);
-        setView('home');
-        // restore problem draft
-        const p = db.patients[found];
-        const t = localToday();
-        const openV = p.visits.filter(v => !v.done && v.date === t).sort((a, b) => (b.no || 0) - (a.no || 0))[0];
-        if (openV && openV.clinical && openV.clinical.patientProblem) {
-          setProblemDraft(openV.clinical.patientProblem);
-          setProblemSaved(true);
+      if (!s) return;
+
+      // Mobile-based session
+      if (s.mobile) {
+        setAuthedMobile(s.mobile);
+        const matches = findAllByMobile(db, s.mobile);
+        if (matches.length > 0) {
+          restorePatient(matches[0].patientId);
+        } else {
+          setView('register');
+          setReg(r => ({ ...r, mobile: s.mobile }));
         }
-      } else {
-        setView('register');
+        return;
+      }
+
+      // Email-based session (Google SSO)
+      if (s.email) {
+        setAuthedEmail(s.email);
+        const found = db.order.find(id => (db.patients[id].email || '').toLowerCase() === s.email.toLowerCase());
+        if (found) {
+          restorePatient(found);
+        } else {
+          setView('register');
+        }
       }
     } catch { /* ignore */ }
-    // only run once when db first loads
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [db !== null]);
 
-  /* ─── auth actions ─── */
+  function restorePatient(pid) {
+    setMyPatientId(pid);
+    setView('home');
+    const p = db.patients[pid];
+    if (p) {
+      const t = localToday();
+      const openV = p.visits.filter(v => !v.done && v.date === t).sort((a, b) => (b.no || 0) - (a.no || 0))[0];
+      if (openV && openV.clinical && openV.clinical.patientProblem) {
+        setProblemDraft(openV.clinical.patientProblem);
+        setProblemSaved(true);
+      }
+    }
+  }
+
+  /* ─── Google SSO auth ─── */
+  function getClientId() {
+    return import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
+  }
+
   function handleGoogleSignIn() {
     const clientId = getClientId();
     if (!clientId) { setAuthError('Google Client ID not configured.'); return; }
@@ -203,9 +238,9 @@ export default function PortalApp() {
     window.location.href = authUrl;
   }
 
-  function onAuthComplete(userEmail) {
+  function onGoogleAuthComplete(userEmail) {
     try { localStorage.setItem(SESSION_KEY, JSON.stringify({ email: userEmail })); } catch { /* */ }
-    setEmail(userEmail);
+    setAuthedEmail(userEmail);
     setAuthChecking(false);
     if (!db) { setView('register'); return; }
     const found = db.order.find(id => (db.patients[id].email || '').toLowerCase() === userEmail.toLowerCase());
@@ -253,15 +288,142 @@ export default function PortalApp() {
           setAuthChecking(false);
           return;
         }
-        onAuthComplete(userEmail);
+        onGoogleAuthComplete(userEmail);
       })
       .catch(() => { setAuthError('Something went wrong, please try again.'); setAuthChecking(false); });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  /* ─── OTP auth actions ─── */
+  function startResendTimer() {
+    setResendTimer(30);
+    const iv = setInterval(() => {
+      setResendTimer(t => {
+        if (t <= 1) { clearInterval(iv); return 0; }
+        return t - 1;
+      });
+    }, 1000);
+  }
+
+  async function handleSendOtp() {
+    const m = normMobile(loginMobile);
+    if (!m || m.length !== 10) { setAuthError('Please enter a valid 10-digit mobile number.'); return; }
+    setAuthError('');
+    setSendingOtp(true);
+    try {
+      await sendOtp({ mobile: m });
+      setOtpStep(true);
+      setOtpDigits(['', '', '', '', '', '']);
+      startResendTimer();
+    } catch {
+      setAuthError('Failed to send OTP. Please try again.');
+    } finally {
+      setSendingOtp(false);
+    }
+  }
+
+  async function handleResendOtp() {
+    if (resendTimer > 0) return;
+    setAuthError('');
+    setSendingOtp(true);
+    try {
+      await sendOtp({ mobile: normMobile(loginMobile) });
+      setOtpDigits(['', '', '', '', '', '']);
+      startResendTimer();
+    } catch {
+      setAuthError('Failed to resend OTP. Please try again.');
+    } finally {
+      setSendingOtp(false);
+    }
+  }
+
+  function handleOtpChange(idx, val) {
+    const d = val.replace(/\D/g, '').slice(-1);
+    setOtpDigits(prev => {
+      const next = [...prev];
+      next[idx] = d;
+      return next;
+    });
+    setAuthError('');
+    if (d && idx < 5) {
+      otpRefs.current[idx + 1]?.focus();
+    }
+  }
+
+  function handleOtpKeyDown(idx, e) {
+    if (e.key === 'Backspace' && !otpDigits[idx] && idx > 0) {
+      otpRefs.current[idx - 1]?.focus();
+    }
+  }
+
+  function handleOtpPaste(e) {
+    const pasted = (e.clipboardData.getData('text') || '').replace(/\D/g, '').slice(0, 6);
+    if (!pasted) return;
+    e.preventDefault();
+    const next = ['', '', '', '', '', ''];
+    for (let i = 0; i < pasted.length; i++) next[i] = pasted[i];
+    setOtpDigits(next);
+    const focusIdx = Math.min(pasted.length, 5);
+    otpRefs.current[focusIdx]?.focus();
+  }
+
+  async function handleVerifyOtp() {
+    const code = otpDigits.join('');
+    if (code.length !== 6) { setAuthError('Please enter the 6-digit code.'); return; }
+    const m = normMobile(loginMobile);
+    setAuthError('');
+    setVerifyingOtp(true);
+    try {
+      const res = await verifyOtp({ mobile: m, otp: code });
+      if (res.verified) {
+        onOtpVerified(m);
+      } else {
+        setAuthError('Invalid OTP. Please try again.');
+      }
+    } catch (err) {
+      setAuthError(err.message || 'Verification failed. Please try again.');
+    } finally {
+      setVerifyingOtp(false);
+    }
+  }
+
+  function onOtpVerified(mobile) {
+    try { localStorage.setItem(SESSION_KEY, JSON.stringify({ mobile })); } catch { /* */ }
+    setAuthedMobile(mobile);
+    if (!db) { setView('register'); setReg(r => ({ ...r, mobile })); return; }
+    const matches = findAllByMobile(db, mobile);
+    if (matches.length > 0) {
+      const found = matches[0].patientId;
+      setMyPatientId(found);
+      setView('home');
+      const p = db.patients[found];
+      const t = localToday();
+      const openV = p.visits.filter(v => !v.done && v.date === t).sort((a, b) => (b.no || 0) - (a.no || 0))[0];
+      if (openV && openV.clinical && openV.clinical.patientProblem) {
+        setProblemDraft(openV.clinical.patientProblem);
+        setProblemSaved(true);
+      } else {
+        setProblemDraft('');
+        setProblemSaved(false);
+      }
+    } else {
+      setMyPatientId('');
+      setView('register');
+      setReg({ mobile, name: '', age: '', gender: '' });
+      setRegError('');
+      setRegPickedId('');
+      setRegAddingMember(false);
+      setIsAddingForFamily(false);
+    }
+  }
+
   function signOut() {
     try { localStorage.removeItem(SESSION_KEY); } catch { /* */ }
-    setEmail('');
+    setAuthedMobile('');
+    setAuthedEmail('');
+    setLoginMobile('');
+    setOtpStep(false);
+    setOtpDigits(['', '', '', '', '', '']);
     setMyPatientId('');
     setView('login');
     setProblemDraft('');
@@ -270,6 +432,7 @@ export default function PortalApp() {
     setDetailVisitId('');
     setMemberSheet(false);
     setAuthError('');
+    setAuthChecking(false);
   }
 
   /* ─── registration ─── */
@@ -313,10 +476,9 @@ export default function PortalApp() {
     const checkinGender = regPickedId && db.patients[regPickedId] ? db.patients[regPickedId].gender : reg.gender;
 
     try {
-      const res = await portalCheckin({ mobile, name: checkinName, age: checkinAge, gender: checkinGender, email });
+      const res = await portalCheckin({ mobile, name: checkinName, age: checkinAge, gender: checkinGender, email: authedEmail });
       applySnapshot(res);
 
-      // Find the patient by email or mobile+name
       const pid = res.patientId || db.order.find(id => {
         const p = res.patients[id];
         return p.mobile === mobile && p.name.toLowerCase() === checkinName.toLowerCase();
@@ -328,13 +490,6 @@ export default function PortalApp() {
         setProblemDraft('');
         setProblemSaved(false);
         setEditingProblem(false);
-      } else {
-        // Fallback: find by email
-        const byEmail = res.order.find(id => (res.patients[id].email || '').toLowerCase() === email.toLowerCase());
-        if (byEmail) {
-          setMyPatientId(byEmail);
-          setView('home');
-        }
       }
       setReg({ mobile: '', name: '', age: '', gender: '' });
       setRegPickedId('');
@@ -397,7 +552,7 @@ export default function PortalApp() {
     setRegAddingMember(true);
     setRegPickedId('');
     setRegError('');
-    setReg({ mobile: me ? me.mobile : '', name: '', age: '', gender: '' });
+    setReg({ mobile: authedMobile || (me ? me.mobile : ''), name: '', age: '', gender: '' });
     setMemberSheet(false);
   }
 
@@ -464,7 +619,7 @@ export default function PortalApp() {
   }
 
   /* ── derived data ── */
-  const signedIn = !!email;
+  const signedIn = !!(authedMobile || authedEmail);
   const me = db && myPatientId ? db.patients[myPatientId] : null;
   const today = localToday();
 
@@ -678,32 +833,110 @@ export default function PortalApp() {
 
         <main style={{ flex: 1, padding: '18px 16px 40px' }}>
 
-          {/* ═══ 1. LOGIN ═══ */}
+          {/* ═══ 1. LOGIN (OTP + Google SSO) ═══ */}
           {view === 'login' && (
             <div>
               <div style={{ background: '#fff', border: '1px solid #dfece9', borderRadius: 20, padding: '28px 22px', textAlign: 'center', marginTop: 12 }}>
                 <span style={{ display: 'inline-flex', width: 64, height: 64, borderRadius: 20, background: '#e6f4f2', alignItems: 'center', justifyContent: 'center', color: '#0e756c' }}>
-                  <QrIcon />
+                  {otpStep ? <PhoneIcon /> : <QrIcon />}
                 </span>
-                <h1 style={{ fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: 23, color: '#0e3b39', marginTop: 16, textWrap: 'balance' }}>Welcome to the clinic</h1>
-                <p style={{ color: '#5c7a76', fontSize: 15, marginTop: 8, textWrap: 'pretty' }}>Sign in to check in for your visit, get your queue number and see your treatment details.</p>
+                <h1 style={{ fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: 23, color: '#0e3b39', marginTop: 16, textWrap: 'balance' }}>
+                  {otpStep ? 'Enter verification code' : 'Welcome to the clinic'}
+                </h1>
+                <p style={{ color: '#5c7a76', fontSize: 15, marginTop: 8, textWrap: 'pretty' }}>
+                  {otpStep
+                    ? <>We sent a 6-digit code to <strong>+91 {loginMobile}</strong></>
+                    : 'Sign in to check in for your visit, get your queue number and see your treatment details.'}
+                </p>
+
                 {authChecking ? (
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, padding: '18px 0' }}>
                     <div style={{ width: 40, height: 40, border: '3.5px solid #d6e7e3', borderTopColor: '#12a094', borderRadius: '50%', animation: 'spin .7s linear infinite' }} />
                     <span style={{ color: '#5c7a76', fontSize: 14, fontWeight: 600 }}>Signing in...</span>
                   </div>
+                ) : !otpStep ? (
+                  <div style={{ marginTop: 20 }}>
+                    {/* ── Mobile OTP ── */}
+                    <div style={{ textAlign: 'left' }}>
+                      <label style={{ display: 'block', fontWeight: 700, fontSize: '13.5px', marginBottom: 7, color: '#0e3b39' }}>Mobile number</label>
+                      <input
+                        value={loginMobile}
+                        onChange={e => { setLoginMobile(e.target.value.replace(/\D/g, '').slice(0, 10)); setAuthError(''); }}
+                        inputMode="numeric"
+                        placeholder="10-digit mobile number"
+                        style={{ width: '100%', padding: '14px 14px', border: '1px solid #d6e7e3', borderRadius: 11, fontSize: 17, background: '#f7fbfa', textAlign: 'center', letterSpacing: '0.12em', fontWeight: 600 }}
+                      />
+                      <button onClick={handleSendOtp} disabled={sendingOtp} style={{
+                        width: '100%', marginTop: 14, padding: 15, borderRadius: 12, border: 0,
+                        background: sendingOtp ? '#8aa8a3' : '#ef5a3c', color: '#fff',
+                        fontWeight: 700, fontSize: 16, cursor: sendingOtp ? 'default' : 'pointer',
+                      }}>
+                        {sendingOtp ? 'Sending OTP...' : 'Send OTP'}
+                      </button>
+                    </div>
+
+                    {/* ── Divider ── */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 14, margin: '20px 0' }}>
+                      <div style={{ flex: 1, height: 1, background: '#dbe6e4' }} />
+                      <span style={{ fontSize: 12, fontWeight: 700, color: '#98b0ab', letterSpacing: '.08em' }}>OR</span>
+                      <div style={{ flex: 1, height: 1, background: '#dbe6e4' }} />
+                    </div>
+
+                    {/* ── Google SSO ── */}
+                    <button onClick={handleGoogleSignIn} style={{
+                      width: '100%', padding: 14, borderRadius: 12,
+                      border: '1px solid #dbe6e4', background: '#fff', color: '#33534f',
+                      fontWeight: 700, fontSize: '15.5px', cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 11,
+                      boxShadow: '0 2px 6px rgba(14,59,57,.07)',
+                    }}>
+                      <GoogleLogo />
+                      Continue with Google
+                    </button>
+                  </div>
                 ) : (
-                  <button onClick={handleGoogleSignIn} style={{
-                    width: '100%', marginTop: 22, padding: 14, borderRadius: 12,
-                    border: '1px solid #dbe6e4', background: '#fff', color: '#33534f',
-                    fontWeight: 700, fontSize: '15.5px', cursor: 'pointer',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 11,
-                    boxShadow: '0 2px 6px rgba(14,59,57,.07)',
-                  }}>
-                    <GoogleLogo />
-                    Continue with Google
-                  </button>
+                  <div style={{ marginTop: 20 }}>
+                    <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }} onPaste={handleOtpPaste}>
+                      {otpDigits.map((d, i) => (
+                        <input
+                          key={i}
+                          ref={el => otpRefs.current[i] = el}
+                          value={d}
+                          onChange={e => handleOtpChange(i, e.target.value)}
+                          onKeyDown={e => handleOtpKeyDown(i, e)}
+                          inputMode="numeric"
+                          maxLength={1}
+                          style={{
+                            width: 44, height: 52, textAlign: 'center', fontSize: 22, fontWeight: 700,
+                            border: d ? '2px solid #12a094' : '1.5px solid #d6e7e3',
+                            borderRadius: 11, background: d ? '#eef7f6' : '#f7fbfa', color: '#0e3b39',
+                          }}
+                        />
+                      ))}
+                    </div>
+                    <button onClick={handleVerifyOtp} disabled={verifyingOtp} style={{
+                      width: '100%', marginTop: 18, padding: 15, borderRadius: 12, border: 0,
+                      background: verifyingOtp ? '#8aa8a3' : '#ef5a3c', color: '#fff',
+                      fontWeight: 700, fontSize: 16, cursor: verifyingOtp ? 'default' : 'pointer',
+                    }}>
+                      {verifyingOtp ? 'Verifying...' : 'Verify & continue'}
+                    </button>
+                    <div style={{ marginTop: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, flexWrap: 'wrap' }}>
+                      {resendTimer > 0 ? (
+                        <span style={{ color: '#98b0ab', fontSize: 13, fontWeight: 600 }}>Resend in {resendTimer}s</span>
+                      ) : (
+                        <button onClick={handleResendOtp} disabled={sendingOtp} style={{ border: 0, background: 'none', color: '#0e756c', fontWeight: 700, fontSize: 13, cursor: 'pointer', textDecoration: 'underline', textUnderlineOffset: '2px' }}>
+                          Resend OTP
+                        </button>
+                      )}
+                      <span style={{ color: '#d6e7e3' }}>|</span>
+                      <button onClick={() => { setOtpStep(false); setAuthError(''); setOtpDigits(['', '', '', '', '', '']); }} style={{ border: 0, background: 'none', color: '#5c7a76', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
+                        Change number
+                      </button>
+                    </div>
+                  </div>
                 )}
+
                 {authError && <p style={{ color: '#c0392b', fontSize: 13, fontWeight: 600, marginTop: 14 }}>{authError}</p>}
                 <p style={{ color: '#98b0ab', fontSize: 12, marginTop: 14 }}>We only use this to identify your records.</p>
               </div>
@@ -725,18 +958,18 @@ export default function PortalApp() {
                 {isAddingForFamily ? 'Add a family member' : 'Check in for your visit'}
               </h1>
               <p style={{ color: '#5c7a76', fontSize: '14.5px', marginTop: 4 }}>
-                {isAddingForFamily ? 'Register someone on the same mobile number.' : 'Enter your mobile number to get started.'}
+                {isAddingForFamily ? 'Register someone on the same mobile number.' : 'Enter your details to get started.'}
               </p>
 
               <div style={{ background: '#fff', border: '1px solid #dfece9', borderRadius: 18, padding: 20, marginTop: 16, display: 'flex', flexDirection: 'column', gap: 14 }}>
                 {/* Mobile */}
                 <div>
-                  <label style={{ display: 'block', fontWeight: 700, fontSize: '13.5px', marginBottom: 7 }}>Mobile number <span style={{ color: '#ef5a3c' }}>*</span></label>
+                  <label style={{ display: 'block', fontWeight: 700, fontSize: '13.5px', marginBottom: 7 }}>Mobile number <span style={{ color: '#ef5a3c' }}>*</span>{authedMobile && <span style={{ color: '#12a094', fontWeight: 600, fontSize: 11.5, marginLeft: 6 }}>verified</span>}</label>
                   <input
                     className="fld" value={reg.mobile} onChange={e => onRegMobileChange(e.target.value)}
                     inputMode="numeric" placeholder="10-digit number"
-                    readOnly={isAddingForFamily}
-                    style={{ width: '100%', padding: '13px 14px', border: '1px solid #d6e7e3', borderRadius: 11, fontSize: 16, background: isAddingForFamily ? '#f0f6f5' : '#f7fbfa' }}
+                    readOnly={!!authedMobile || isAddingForFamily}
+                    style={{ width: '100%', padding: '13px 14px', border: '1px solid #d6e7e3', borderRadius: 11, fontSize: 16, background: (authedMobile || isAddingForFamily) ? '#f0f6f5' : '#f7fbfa' }}
                   />
                 </div>
 
@@ -1024,13 +1257,12 @@ export default function PortalApp() {
               {/* NEW VISIT CTA */}
               {canStartVisit && activeVisit === null && (
                 <button onClick={() => {
-                  // Go to register to check in for a new visit
                   setView('register');
                   setIsAddingForFamily(false);
                   setRegAddingMember(false);
                   setRegPickedId(myPatientId);
                   setRegError('');
-                  setReg({ mobile: me.mobile, name: me.name, age: me.age, gender: me.gender });
+                  setReg({ mobile: authedMobile || me.mobile, name: me.name, age: me.age, gender: me.gender });
                 }} style={{
                   width: '100%', marginTop: 14, padding: 15, borderRadius: 13, border: 0,
                   background: '#ef5a3c', color: '#fff', fontWeight: 700, fontSize: 16, cursor: 'pointer',

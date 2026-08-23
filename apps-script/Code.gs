@@ -62,6 +62,8 @@ function doPost(e) {
     if (action === 'uploadQr') return jsonOut_(action_uploadQr_(body));
     if (action === 'portalCheckin') return jsonOut_(action_portalCheckin_(body));
     if (action === 'savePatientProblem') return jsonOut_(action_savePatientProblem_(body));
+    if (action === 'sendOtp') return jsonOut_(action_sendOtp_(body));
+    if (action === 'verifyOtp') return jsonOut_(action_verifyOtp_(body));
     return jsonOut_({ ok: false, error: 'Unknown or missing action: ' + action });
   } catch (err) {
     return jsonOut_({ ok: false, error: String(err && err.message || err) });
@@ -700,6 +702,104 @@ function action_savePatientProblem_(body) {
     }
 
     return readSnapshot_();
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// ---------- OTP via Twilio ----------
+
+var OTP_SHEET = 'OTP';
+var OTP_HEADERS = ['mobile', 'otp', 'createdAt', 'used'];
+var OTP_EXPIRY_MS = 5 * 60 * 1000;
+
+function getTwilioCreds_(body) {
+  return {
+    sid: String(body.twilioSid || ''),
+    token: String(body.twilioToken || ''),
+    from: String(body.twilioFrom || ''),
+  };
+}
+
+function action_sendOtp_(body) {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    var mobile = normMobile_(body.mobile);
+    if (!mobile || mobile.length !== 10) return { ok: false, error: 'Please enter a valid 10-digit mobile number.' };
+
+    var creds = getTwilioCreds_(body);
+    if (!creds.sid || !creds.token || !creds.from) {
+      return { ok: false, error: 'OTP service not configured. Please contact the clinic.' };
+    }
+
+    var otp = String(Math.floor(100000 + Math.random() * 900000));
+    var otpSh = ensureSheet_(OTP_SHEET, OTP_HEADERS);
+    var otpIdx = headerIndex_(otpSh);
+    var numCols = otpSh.getLastColumn();
+    var newRow = new Array(numCols).fill('');
+    if (otpIdx.mobile !== undefined) newRow[otpIdx.mobile] = mobile;
+    if (otpIdx.otp !== undefined) newRow[otpIdx.otp] = otp;
+    if (otpIdx.createdAt !== undefined) newRow[otpIdx.createdAt] = new Date().toISOString();
+    if (otpIdx.used !== undefined) newRow[otpIdx.used] = false;
+    otpSh.appendRow(newRow);
+
+    var toNumber = '+91' + mobile;
+    var url = 'https://api.twilio.com/2010-04-01/Accounts/' + creds.sid + '/Messages.json';
+    var payload = {
+      To: toNumber,
+      From: creds.from,
+      Body: 'Your PatientPad verification code is ' + otp + '. Valid for 5 minutes.',
+    };
+    var options = {
+      method: 'post',
+      payload: payload,
+      headers: {
+        Authorization: 'Basic ' + Utilities.base64Encode(creds.sid + ':' + creds.token),
+      },
+      muteHttpExceptions: true,
+    };
+    var res = UrlFetchApp.fetch(url, options);
+    var code = res.getResponseCode();
+    if (code < 200 || code >= 300) {
+      return { ok: false, error: 'Failed to send OTP. Please try again.' };
+    }
+
+    return { ok: true, sent: true };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function action_verifyOtp_(body) {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    var mobile = normMobile_(body.mobile);
+    var otpInput = String(body.otp || '').trim();
+    if (!mobile || mobile.length !== 10) return { ok: false, error: 'Invalid mobile number.' };
+    if (!otpInput || otpInput.length !== 6) return { ok: false, error: 'Please enter the 6-digit code.' };
+
+    var otpSh = ensureSheet_(OTP_SHEET, OTP_HEADERS);
+    var data = sheetRows_(otpSh);
+    var now = new Date().getTime();
+
+    var matched = false;
+    for (var i = data.rows.length - 1; i >= 0; i--) {
+      var row = data.rows[i];
+      if (String(row[data.idx.mobile]) !== mobile) continue;
+      if (row[data.idx.used] === true || row[data.idx.used] === 'TRUE' || row[data.idx.used] === 'true') continue;
+      var created = new Date(row[data.idx.createdAt]).getTime();
+      if (now - created > OTP_EXPIRY_MS) continue;
+      if (String(row[data.idx.otp]) === otpInput) {
+        otpSh.getRange(i + 2, data.idx.used + 1).setValue(true);
+        matched = true;
+        break;
+      }
+    }
+
+    if (!matched) return { ok: false, error: 'Invalid or expired OTP. Please try again.' };
+    return { ok: true, verified: true };
   } finally {
     lock.releaseLock();
   }

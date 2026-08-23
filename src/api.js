@@ -83,3 +83,17 @@ export function portalCheckin({ mobile, name, age, gender, email }) {
 export function savePatientProblem({ patientId, visitId, patientProblem }) {
   return post({ action: 'savePatientProblem', patientId, visitId, patientProblem });
 }
+
+export function sendOtp({ mobile }) {
+  return post({
+    action: 'sendOtp',
+    mobile,
+    twilioSid: import.meta.env.VITE_TWILIO_SID || '',
+    twilioToken: import.meta.env.VITE_TWILIO_TOKEN || '',
+    twilioFrom: import.meta.env.VITE_TWILIO_FROM || '',
+  });
+}
+
+export function verifyOtp({ mobile, otp }) {
+  return post({ action: 'verifyOtp', mobile, otp });
+}
