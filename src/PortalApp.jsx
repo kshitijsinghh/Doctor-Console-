@@ -89,11 +89,9 @@ const PeopleAddIcon = () => (
   <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M16 19v-1.5a3.5 3.5 0 0 0-3.5-3.5h-5A3.5 3.5 0 0 0 4 17.5V19"/><circle cx="10" cy="8" r="3.2"/><path d="M18 11h4M20 9v4"/></svg>
 );
 
-/* ─── DEMO ACCOUNTS for mock Google SSO ─── */
-const DEMO_ACCOUNTS = [
-  { label: 'Ananya Rao', email: 'ananya.rao@gmail.com', sub: 'Existing patient with history' },
-  { label: 'Meera Iyer', email: 'meera.iyer@gmail.com', sub: 'New patient — needs registration' },
-];
+function getClientId() {
+  return import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
+}
 
 /* ═══════════════════════════════════════════
    PortalApp — Patient Portal (all in one)
@@ -107,7 +105,8 @@ export default function PortalApp() {
 
   /* ── auth ── */
   const [email, setEmail] = useState('');
-  const [showChooser, setShowChooser] = useState(false);
+  const [authChecking, setAuthChecking] = useState(false);
+  const [authError, setAuthError] = useState('');
 
   /* ── navigation: login | register | home | records | family ── */
   const [view, setView] = useState('login');
@@ -189,12 +188,27 @@ export default function PortalApp() {
   }, [db !== null]);
 
   /* ─── auth actions ─── */
-  function googleSignIn(chosenEmail) {
-    try { localStorage.setItem(SESSION_KEY, JSON.stringify({ email: chosenEmail })); } catch { /* */ }
-    setEmail(chosenEmail);
-    setShowChooser(false);
+  function handleGoogleSignIn() {
+    const clientId = getClientId();
+    if (!clientId) { setAuthError('Google Client ID not configured.'); return; }
+    const redirectUri = window.location.origin + window.location.pathname;
+    const authUrl = 'https://accounts.google.com/o/oauth2/v2/auth?' +
+      new URLSearchParams({
+        client_id: clientId,
+        redirect_uri: redirectUri,
+        response_type: 'token',
+        scope: 'email profile',
+        prompt: 'select_account',
+      }).toString();
+    window.location.href = authUrl;
+  }
+
+  function onAuthComplete(userEmail) {
+    try { localStorage.setItem(SESSION_KEY, JSON.stringify({ email: userEmail })); } catch { /* */ }
+    setEmail(userEmail);
+    setAuthChecking(false);
     if (!db) { setView('register'); return; }
-    const found = db.order.find(id => (db.patients[id].email || '').toLowerCase() === chosenEmail.toLowerCase());
+    const found = db.order.find(id => (db.patients[id].email || '').toLowerCase() === userEmail.toLowerCase());
     if (found) {
       setMyPatientId(found);
       setView('home');
@@ -218,6 +232,33 @@ export default function PortalApp() {
       setIsAddingForFamily(false);
     }
   }
+
+  useEffect(() => {
+    const hash = window.location.hash;
+    if (!hash || !hash.includes('access_token')) return;
+    setAuthChecking(true);
+    const params = new URLSearchParams(hash.substring(1));
+    const accessToken = params.get('access_token');
+    window.history.replaceState(null, '', window.location.pathname);
+    if (!accessToken) { setAuthChecking(false); return; }
+
+    fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+      headers: { Authorization: 'Bearer ' + accessToken },
+    })
+      .then(r => r.json())
+      .then(info => {
+        const userEmail = (info.email || '').toLowerCase();
+        if (!userEmail) {
+          setAuthError('Could not get your email from Google.');
+          setAuthChecking(false);
+          return;
+        }
+        onAuthComplete(userEmail);
+      })
+      .catch(() => { setAuthError('Something went wrong, please try again.'); setAuthChecking(false); });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   function signOut() {
     try { localStorage.removeItem(SESSION_KEY); } catch { /* */ }
     setEmail('');
@@ -228,6 +269,7 @@ export default function PortalApp() {
     setEditingProblem(false);
     setDetailVisitId('');
     setMemberSheet(false);
+    setAuthError('');
   }
 
   /* ─── registration ─── */
@@ -645,48 +687,25 @@ export default function PortalApp() {
                 </span>
                 <h1 style={{ fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: 23, color: '#0e3b39', marginTop: 16, textWrap: 'balance' }}>Welcome to the clinic</h1>
                 <p style={{ color: '#5c7a76', fontSize: 15, marginTop: 8, textWrap: 'pretty' }}>Sign in to check in for your visit, get your queue number and see your treatment details.</p>
-                <button onClick={() => setShowChooser(true)} style={{
-                  width: '100%', marginTop: 22, padding: 14, borderRadius: 12,
-                  border: '1px solid #dbe6e4', background: '#fff', color: '#33534f',
-                  fontWeight: 700, fontSize: '15.5px', cursor: 'pointer',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 11,
-                  boxShadow: '0 2px 6px rgba(14,59,57,.07)',
-                }}>
-                  <GoogleLogo />
-                  Continue with Google
-                </button>
+                {authChecking ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, padding: '18px 0' }}>
+                    <div style={{ width: 40, height: 40, border: '3.5px solid #d6e7e3', borderTopColor: '#12a094', borderRadius: '50%', animation: 'spin .7s linear infinite' }} />
+                    <span style={{ color: '#5c7a76', fontSize: 14, fontWeight: 600 }}>Signing in...</span>
+                  </div>
+                ) : (
+                  <button onClick={handleGoogleSignIn} style={{
+                    width: '100%', marginTop: 22, padding: 14, borderRadius: 12,
+                    border: '1px solid #dbe6e4', background: '#fff', color: '#33534f',
+                    fontWeight: 700, fontSize: '15.5px', cursor: 'pointer',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 11,
+                    boxShadow: '0 2px 6px rgba(14,59,57,.07)',
+                  }}>
+                    <GoogleLogo />
+                    Continue with Google
+                  </button>
+                )}
+                {authError && <p style={{ color: '#c0392b', fontSize: 13, fontWeight: 600, marginTop: 14 }}>{authError}</p>}
                 <p style={{ color: '#98b0ab', fontSize: 12, marginTop: 14 }}>We only use this to identify your records.</p>
-              </div>
-            </div>
-          )}
-
-          {/* ═══ GOOGLE ACCOUNT CHOOSER (mock SSO) ═══ */}
-          {showChooser && (
-            <div onClick={() => setShowChooser(false)} style={{ position: 'fixed', inset: 0, zIndex: 90, background: 'rgba(14,59,57,.55)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
-              <div onClick={e => e.stopPropagation()} style={{ background: '#fff', borderRadius: '22px 22px 0 0', width: '100%', maxWidth: 460, padding: '22px 20px 26px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <GoogleLogo />
-                  <span style={{ fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: '16.5px', color: '#0e3b39' }}>Choose an account</span>
-                </div>
-                <p style={{ fontSize: 13, color: '#98b0ab', marginTop: 4 }}>to continue to {CLINIC_NAME}</p>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 16 }}>
-                  {DEMO_ACCOUNTS.map(a => (
-                    <button key={a.email} onClick={() => googleSignIn(a.email)} style={{
-                      textAlign: 'left', width: '100%', display: 'flex', alignItems: 'center', gap: 12,
-                      padding: 13, border: '1px solid #e2efec', borderRadius: 13, background: '#fff', cursor: 'pointer',
-                    }}>
-                      <span style={{ flex: '0 0 auto', width: 40, height: 40, borderRadius: '50%', background: '#0e756c', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontFamily: "'Bricolage Grotesque'" }}>
-                        {a.label.charAt(0).toUpperCase()}
-                      </span>
-                      <span style={{ flex: 1, minWidth: 0, lineHeight: 1.3 }}>
-                        <span style={{ display: 'block', fontWeight: 700, color: '#0e3b39', fontSize: 15 }}>{a.label}</span>
-                        <span style={{ display: 'block', fontSize: '12.5px', color: '#5c7a76' }}>{a.email}</span>
-                        <span style={{ display: 'block', fontSize: '11.5px', color: '#98b0ab' }}>{a.sub}</span>
-                      </span>
-                    </button>
-                  ))}
-                </div>
-                <p style={{ fontSize: '11.5px', color: '#a9c1bc', marginTop: 14, textAlign: 'center' }}>Demo sign-in — no real Google account is used.</p>
               </div>
             </div>
           )}
