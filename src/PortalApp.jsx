@@ -1316,9 +1316,9 @@ export default function PortalApp() {
               if (c.comments) rows.push({ k: 'Notes', v: c.comments });
             }
             return (
-              <div onClick={() => setDetailVisitId('')} style={{ position: 'fixed', inset: 0, zIndex: 80, background: 'rgba(14,59,57,.55)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
-                <div onClick={e => e.stopPropagation()} style={{ background: '#fff', borderRadius: '22px 22px 0 0', width: '100%', maxWidth: 460, maxHeight: '88vh', overflow: 'auto' }}>
-                  <div style={{ position: 'sticky', top: 0, background: '#0e3b39', color: '#fff', padding: '18px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+              <div onClick={() => setDetailVisitId('')} style={{ position: 'fixed', inset: 0, zIndex: 80, background: 'rgba(14,59,57,.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+                <div onClick={e => e.stopPropagation()} style={{ background: '#fff', borderRadius: 20, width: '100%', maxWidth: 460, maxHeight: '82vh', overflow: 'auto' }}>
+                  <div style={{ position: 'sticky', top: 0, background: '#0e3b39', color: '#fff', padding: '18px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, borderRadius: '20px 20px 0 0' }}>
                     <div style={{ minWidth: 0 }}>
                       <span style={{ fontFamily: 'ui-monospace,monospace', fontSize: '12.5px', color: '#7fd4c9', fontWeight: 700 }}>{v.visitId}</span>
                       <h3 style={{ fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: 17 }}>{fmtDate(v.date)}</h3>
