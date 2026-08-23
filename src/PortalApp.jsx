@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { fetchList, portalCheckin, savePatientProblem } from './api';
-import { auth, RecaptchaVerifier, signInWithPhoneNumber, signOut as firebaseSignOut } from './firebase';
+import { getFirebaseAuth, RecaptchaVerifier, signInWithPhoneNumber, signOut as firebaseSignOut } from './firebase';
 
 /* ─── helpers ─── */
 function localToday() {
@@ -310,7 +310,7 @@ export default function PortalApp() {
 
   function setupRecaptcha() {
     if (recaptchaRef.current) return recaptchaRef.current;
-    recaptchaRef.current = new RecaptchaVerifier(auth, 'recaptcha-container', { size: 'invisible' });
+    recaptchaRef.current = new RecaptchaVerifier(getFirebaseAuth(), 'recaptcha-container', { size: 'invisible' });
     return recaptchaRef.current;
   }
 
@@ -329,7 +329,7 @@ export default function PortalApp() {
     try {
       clearRecaptcha();
       const verifier = setupRecaptcha();
-      const result = await signInWithPhoneNumber(auth, '+91' + m, verifier);
+      const result = await signInWithPhoneNumber(getFirebaseAuth(), '+91' + m, verifier);
       confirmationRef.current = result;
       setOtpStep(true);
       setOtpDigits(['', '', '', '', '', '']);
@@ -352,7 +352,7 @@ export default function PortalApp() {
     try {
       clearRecaptcha();
       const verifier = setupRecaptcha();
-      const result = await signInWithPhoneNumber(auth, '+91' + normMobile(loginMobile), verifier);
+      const result = await signInWithPhoneNumber(getFirebaseAuth(), '+91' + normMobile(loginMobile), verifier);
       confirmationRef.current = result;
       setOtpDigits(['', '', '', '', '', '']);
       startResendTimer();
@@ -445,7 +445,7 @@ export default function PortalApp() {
   }
 
   function signOut() {
-    try { firebaseSignOut(auth); } catch {}
+    try { firebaseSignOut(getFirebaseAuth()); } catch {}
     try { localStorage.removeItem(SESSION_KEY); } catch { /* */ }
     clearRecaptcha();
     confirmationRef.current = null;
