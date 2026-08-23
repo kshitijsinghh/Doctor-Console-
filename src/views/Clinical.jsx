@@ -276,6 +276,7 @@ export default function Clinical({
           { k: 'Lab name', v: dash(c.labName) },
           { k: 'Lab tooth number', v: dash(c.labToothNumber || c.toothNumber) },
           { k: 'Lab description', v: dash(c.labDescription) },
+          { k: "Patient's complaint", v: dash(c.patientProblem) },
         ],
       };
     }
@@ -393,6 +394,15 @@ export default function Clinical({
 
       <div style={{ background: '#fff', border: '1px solid #dfece9', borderRadius: 18, padding: 24, marginTop: 16 }}>
         <h3 style={{ ...h3Style, marginBottom: 16 }}>Doctor's form</h3>
+        {!!cform.patientProblem && (
+          <div style={{ background: '#f2f9f8', border: '1px solid #cfe3df', borderRadius: 12, padding: '13px 15px', marginBottom: 16 }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 11.5, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: '#0e756c' }}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 9 9 0 0 1-3.3-.6L3 21l1.7-5a8.4 8.4 0 0 1-.7-3.5A8.4 8.4 0 0 1 12.5 3 8.4 8.4 0 0 1 21 11.5z"/></svg>
+              Patient's complaint &middot; submitted by patient
+            </span>
+            <p style={{ fontSize: 14.5, color: '#0e3b39', marginTop: 7 }}>{cform.patientProblem}</p>
+          </div>
+        )}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 280px), 1fr))', gap: 16 }}>
           <div>
             <label style={labelStyle}>Patient type</label>

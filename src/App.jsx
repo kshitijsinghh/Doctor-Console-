@@ -9,10 +9,12 @@ import PatientDetail from './views/PatientDetail';
 import { fetchList, saveIntake, saveClinical, uploadQr, getCachedList } from './api';
 
 function today() {
-  return new Date().toISOString().slice(0, 10);
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 }
 function firstOfMonth() {
-  return new Date().toISOString().slice(0, 8) + '01';
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-01';
 }
 function normMobile(m) {
   return (m || '').replace(/\D/g, '');
@@ -46,6 +48,7 @@ function blankClinical() {
     treatmentCost: '', amountPaid: '', balanceDue: '', paymentMode: '',
     treatmentStage: '', googleReviewTaken: '', nextAppointment: '', nextAppointmentTime: '', comments: '',
     labName: '', labToothNumber: '', labDescription: '',
+    patientProblem: '',
   };
 }
 function findAllByMobile(db, mobile) {

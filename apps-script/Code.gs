@@ -30,7 +30,7 @@ var VISITS_SHEET = 'Visits';
 var SETTINGS_SHEET = 'Settings';
 var QR_FOLDER_NAME = 'Clinic Console QR';
 
-var PATIENTS_HEADERS = ['patientId', 'mobile', 'name', 'age', 'gender', 'createdAt'];
+var PATIENTS_HEADERS = ['patientId', 'mobile', 'name', 'age', 'gender', 'email', 'createdAt'];
 var VISITS_HEADERS = [
   'visitId', 'patientId', 'patientName', 'patientAge', 'patientGender',
   'visitNo', 'date', 'createdAt', 'done',
@@ -40,6 +40,7 @@ var VISITS_HEADERS = [
   'nextAppointment', 'nextAppointmentTime', 'comments',
   'labName', 'labToothNumber', 'labDescription',
   'calendarEventId',
+  'patientProblem', 'queueNumber',
 ];
 
 function doGet(e) {
@@ -59,6 +60,8 @@ function doPost(e) {
     if (action === 'saveIntake') return jsonOut_(action_saveIntake_(body));
     if (action === 'saveClinical') return jsonOut_(action_saveClinical_(body));
     if (action === 'uploadQr') return jsonOut_(action_uploadQr_(body));
+    if (action === 'portalCheckin') return jsonOut_(action_portalCheckin_(body));
+    if (action === 'savePatientProblem') return jsonOut_(action_savePatientProblem_(body));
     return jsonOut_({ ok: false, error: 'Unknown or missing action: ' + action });
   } catch (err) {
     return jsonOut_({ ok: false, error: String(err && err.message || err) });
@@ -173,6 +176,7 @@ function readSnapshot_() {
       name: p.name || '',
       age: p.age === '' ? '' : p.age,
       gender: p.gender || '',
+      email: p.email || '',
       visits: [],
     };
     order.push(p.patientId);
@@ -211,7 +215,9 @@ function readSnapshot_() {
         labName: v.labName || '',
         labToothNumber: v.labToothNumber instanceof Date ? '' : String(v.labToothNumber || ''),
         labDescription: v.labDescription || '',
+        patientProblem: v.patientProblem || '',
       },
+      queueNumber: v.queueNumber === '' ? '' : (typeof v.queueNumber === 'number' ? v.queueNumber : (parseInt(v.queueNumber, 10) || '')),
     });
   });
 
@@ -530,6 +536,168 @@ function action_uploadQr_(body) {
 
     var settingsSh = ensureSheet_(SETTINGS_SHEET, ['key', 'value']);
     setSetting_(settingsSh, 'upiQr', url);
+
+    return readSnapshot_();
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function todayLocal_() {
+  var tz = Session.getScriptTimeZone() || 'Asia/Kolkata';
+  return Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
+}
+
+function action_portalCheckin_(body) {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    ensureAllSheets_();
+    var mobile = normMobile_(body.mobile);
+    var name = String(body.name || '').trim();
+    var age = body.age;
+    var gender = String(body.gender || '');
+    var email = String(body.email || '').trim();
+    var date = todayLocal_();
+    if (!mobile) return { ok: false, error: 'Mobile number is required.' };
+    if (!name || String(age).trim() === '' || !gender) {
+      return { ok: false, error: 'Name, age, and gender are required.' };
+    }
+
+    var patientsSh = ensureSheet_(PATIENTS_SHEET, PATIENTS_HEADERS);
+    var visitsSh = ensureSheet_(VISITS_SHEET, VISITS_HEADERS);
+    var settingsSh = ensureSheet_(SETTINGS_SHEET, ['key', 'value']);
+
+    var pData = sheetRows_(patientsSh);
+    var patientId = null;
+    var rowIdx = -1;
+    var nameToMatch = name.toLowerCase();
+    for (var i = 0; i < pData.rows.length; i++) {
+      if (String(pData.rows[i][pData.idx.mobile]) === mobile &&
+          String(pData.rows[i][pData.idx.name] || '').trim().toLowerCase() === nameToMatch) {
+        patientId = pData.rows[i][pData.idx.patientId];
+        rowIdx = i;
+        break;
+      }
+    }
+
+    if (patientId) {
+      var r = rowIdx + 2;
+      patientsSh.getRange(r, pData.idx.age + 1).setValue(age);
+      patientsSh.getRange(r, pData.idx.gender + 1).setValue(gender);
+      if (email && pData.idx.email !== undefined) {
+        patientsSh.getRange(r, pData.idx.email + 1).setValue(email);
+      }
+    } else {
+      var settings = settingsMap_(settingsSh);
+      var seq = Number(settings.seq || 0) + 1;
+      patientId = 'P' + ('0000' + seq).slice(-4);
+      var pIdx = headerIndex_(patientsSh);
+      var pNumCols = patientsSh.getLastColumn();
+      var pNewRow = new Array(pNumCols).fill('');
+      var setPCol = function (key, val) { if (pIdx[key] !== undefined) pNewRow[pIdx[key]] = val; };
+      setPCol('patientId', patientId);
+      setPCol('mobile', mobile);
+      setPCol('name', name);
+      setPCol('age', age);
+      setPCol('gender', gender);
+      setPCol('email', email);
+      setPCol('createdAt', new Date().toISOString());
+      patientsSh.appendRow(pNewRow);
+      setSetting_(settingsSh, 'seq', seq);
+    }
+
+    var vData = sheetRows_(visitsSh);
+    var vIdx = headerIndex_(visitsSh);
+
+    var existingTodayVisit = null;
+    var visitNo = 1;
+    for (var vi = 0; vi < vData.rows.length; vi++) {
+      if (vData.rows[vi][vData.idx.patientId] !== patientId) continue;
+      visitNo++;
+      var vDate = vData.rows[vi][vData.idx.date];
+      if (vDate instanceof Date) vDate = formatDate_(vDate);
+      else vDate = String(vDate || '');
+      if (vDate === date) {
+        existingTodayVisit = {
+          visitId: vData.rows[vi][vData.idx.visitId],
+          queueNumber: vData.rows[vi][vData.idx.queueNumber] || '',
+        };
+      }
+    }
+
+    if (existingTodayVisit) {
+      var snap = readSnapshot_();
+      snap.patientId = patientId;
+      snap.visitId = existingTodayVisit.visitId;
+      snap.queueNumber = existingTodayVisit.queueNumber;
+      return snap;
+    }
+
+    var queueNum = 1;
+    for (var qi = 0; qi < vData.rows.length; qi++) {
+      var qDate = vData.rows[qi][vData.idx.date];
+      if (qDate instanceof Date) qDate = formatDate_(qDate);
+      else qDate = String(qDate || '');
+      if (qDate === date) {
+        var qn = parseInt(vData.rows[qi][vData.idx.queueNumber], 10);
+        if (qn >= queueNum) queueNum = qn + 1;
+      }
+    }
+
+    var visitId = patientId + '_' + visitNo;
+    var numCols = visitsSh.getLastColumn();
+    var newRow = new Array(numCols).fill('');
+    var setCol = function (key, val) { if (vIdx[key] !== undefined) newRow[vIdx[key]] = val; };
+    setCol('visitId', visitId);
+    setCol('patientId', patientId);
+    setCol('visitNo', visitNo);
+    setCol('date', date);
+    setCol('createdAt', new Date().toISOString());
+    setCol('done', false);
+    setCol('patientName', name);
+    setCol('patientGender', gender);
+    setCol('patientAge', age);
+    setCol('queueNumber', queueNum);
+    visitsSh.appendRow(newRow);
+
+    var snap = readSnapshot_();
+    snap.patientId = patientId;
+    snap.visitId = visitId;
+    snap.queueNumber = queueNum;
+    return snap;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function action_savePatientProblem_(body) {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    ensureAllSheets_();
+    var patientId = String(body.patientId || '');
+    var visitId = String(body.visitId || '');
+    var patientProblem = String(body.patientProblem || '');
+    if (!patientId || !visitId) return { ok: false, error: 'Missing patient or visit id.' };
+
+    var visitsSh = ensureSheet_(VISITS_SHEET, VISITS_HEADERS);
+    var vData = sheetRows_(visitsSh);
+
+    var targetRow = -1;
+    for (var i = 0; i < vData.rows.length; i++) {
+      if (vData.rows[i][vData.idx.visitId] === visitId &&
+          vData.rows[i][vData.idx.patientId] === patientId) {
+        targetRow = i;
+        break;
+      }
+    }
+    if (targetRow === -1) return { ok: false, error: 'Visit not found: ' + visitId };
+
+    var r = targetRow + 2;
+    if (vData.idx.patientProblem !== undefined) {
+      visitsSh.getRange(r, vData.idx.patientProblem + 1).setValue(patientProblem);
+    }
 
     return readSnapshot_();
   } finally {

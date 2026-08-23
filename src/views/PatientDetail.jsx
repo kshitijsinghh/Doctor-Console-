@@ -46,6 +46,7 @@ function buildDetailRows(v) {
   add('Lab name', c.labName);
   add('Lab tooth number', c.labToothNumber || c.toothNumber);
   add('Lab description', c.labDescription);
+  add("Patient's complaint", c.patientProblem);
   return rows;
 }
 
