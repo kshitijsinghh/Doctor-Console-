@@ -97,7 +97,33 @@ const PhoneIcon = () => (
 /* ═══════════════════════════════════════════
    PortalApp — Patient Portal (all in one)
    ═══════════════════════════════════════════ */
+const PORTAL_ENABLED = (import.meta.env.VITE_PORTAL_ENABLED || 'true').toLowerCase() !== 'false';
+
 export default function PortalApp() {
+  if (!PORTAL_ENABLED) {
+    return (
+      <div style={{
+        minHeight: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        background: '#eef4f3', fontFamily: "'Hanken Grotesk', sans-serif", padding: 24,
+      }}>
+        <div style={{
+          background: '#fff', borderRadius: 18, padding: '48px 32px', maxWidth: 380,
+          width: '100%', textAlign: 'center', boxShadow: '0 2px 16px rgba(14,59,57,.08)',
+        }}>
+          <div style={{ fontSize: 48, marginBottom: 16 }}>🏥</div>
+          <h2 style={{
+            fontFamily: "'Bricolage Grotesque', sans-serif", color: '#0e3b39',
+            fontSize: 22, fontWeight: 700, margin: '0 0 8px',
+          }}>Portal Unavailable</h2>
+          <p style={{ color: '#5f7a78', fontSize: 15, lineHeight: 1.5, margin: 0 }}>
+            The patient portal is currently not available for this clinic.
+            Please contact the clinic directly for assistance.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   /* ── data ── */
   const [db, setDb] = useState(null);
   const [loading, setLoading] = useState(true);
