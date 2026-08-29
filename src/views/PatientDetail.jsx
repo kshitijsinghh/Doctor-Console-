@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { buildRx, buildReceipt, normalizeClinical } from './Clinical';
+import { getDocumentUrl } from '../api';
 
 function num(x) { const n = parseFloat(x); return isNaN(n) ? 0 : n; }
 function inr(n) { return '₹' + Math.round(n).toLocaleString('en-IN'); }
@@ -71,10 +72,10 @@ function buildDetailRows(v, p) {
   add('Lab tooth number', c.labToothNumber || listLabel(c.toothNumber));
   add('Lab description', c.labDescription);
   add("Patient's complaint", c.patientProblem);
-  return { rows, docs: (c.documents || []).filter(d => d.dataUrl), hasDocs: (c.documents || []).some(d => d.dataUrl) };
+  return { rows, docs: (c.documents || []).filter(d => d.dataUrl || d.s3Key), hasDocs: (c.documents || []).some(d => d.dataUrl || d.s3Key) };
 }
 
-function PrescriptionSheet({ rx, onClose, clinicName, clinicAddress }) {
+function PrescriptionSheet({ rx, onClose, clinicName, clinicAddress, doctorName, doctorQualification }) {
   return (
     <div id="rx-overlay" onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 90, background: 'rgba(14,59,57,.6)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 20, overflow: 'auto' }}>
       <div id="rx-sheet" onClick={(e) => e.stopPropagation()} style={{ background: '#fff', borderRadius: 18, width: '100%', maxWidth: 720, overflow: 'hidden', margin: 'auto' }}>
@@ -132,9 +133,11 @@ function PrescriptionSheet({ rx, onClose, clinicName, clinicAddress }) {
               </table>
             </div>
           )}
-          <div style={{ marginTop: 34, display: 'flex', justifyContent: 'flex-end' }}>
-            <span style={{ textAlign: 'center', fontSize: 12.5, color: '#5c7a76', borderTop: '1px solid #cfe3df', paddingTop: 7, minWidth: 190 }}>Dr. Surmayee Singh<br /><span style={{ fontSize: 11.5, color: '#98b0ab' }}>MDS — Conservative Dentistry & Endodontics</span></span>
-          </div>
+          {(doctorName || doctorQualification) && (
+            <div style={{ marginTop: 34, display: 'flex', justifyContent: 'flex-end' }}>
+              <span style={{ textAlign: 'center', fontSize: 12.5, color: '#5c7a76', borderTop: '1px solid #cfe3df', paddingTop: 7, minWidth: 190 }}>Dr. {doctorName}{doctorQualification ? <><br /><span style={{ fontSize: 11.5, color: '#98b0ab' }}>{doctorQualification}</span></> : null}</span>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -202,14 +205,14 @@ function ReceiptSheet({ receipt, onClose, clinicName, clinicAddress }) {
   );
 }
 
-export default function PatientDetail({ patient, patientId, onGoBack, clinicName, clinicAddress }) {
+export default function PatientDetail({ patient, patientId, onGoBack, clinicName, clinicAddress, doctorName, doctorQualification }) {
   const [detailVisit, setDetailVisit] = useState(null);
   const [viewDoc, setViewDoc] = useState(null);
 
   if (!patient) return null;
 
-  const cn = clinicName || 'Surmayee Dental Studio';
-  const ca = clinicAddress || 'Shop No. 7, 1st Floor, SVG Galleria, Sector 131, Noida · +91 82527 04246';
+  const cn = clinicName || '';
+  const ca = clinicAddress || '';
 
   const p = patient;
   const sorted = p.visits.slice().sort((a, b) => (a.no || 0) - (b.no || 0));
@@ -387,9 +390,9 @@ export default function PatientDetail({ patient, patientId, onGoBack, clinicName
                   <span style={{ display: 'block', fontSize: 12, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: '#8aa8a3', marginBottom: 8 }}>Documents</span>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(120px,1fr))', gap: 10 }}>
                     {detail.docs.map((d, i) => (
-                      <a key={i} href={d.dataUrl} target="_blank" rel="noopener noreferrer" style={{ border: '1px solid #e2efec', borderRadius: 11, overflow: 'hidden', background: '#fbfdfd', display: 'block' }}>
+                      <a key={i} href={d.dataUrl || '#'} onClick={d.s3Key ? (ev) => { ev.preventDefault(); getDocumentUrl(d.s3Key).then(u => u && window.open(u, '_blank')); } : undefined} target="_blank" rel="noopener noreferrer" style={{ border: '1px solid #e2efec', borderRadius: 11, overflow: 'hidden', background: '#fbfdfd', display: 'block', cursor: 'pointer' }}>
                         <span style={{ display: 'block', height: 76, background: '#eef4f3', overflow: 'hidden' }}>
-                          {/^image/i.test(d.type) ? <img src={d.dataUrl} alt={d.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8aa8a3', fontSize: 12, fontWeight: 700 }}>PDF</span>}
+                          {/^image/i.test(d.type) && d.dataUrl ? <img src={d.dataUrl} alt={d.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8aa8a3', fontSize: 12, fontWeight: 700 }}>{d.s3Key ? 'S3' : 'PDF'}</span>}
                         </span>
                         <span style={{ display: 'block', padding: '7px 9px' }}>
                           <span style={{ display: 'block', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: '#0e756c' }}>{d.kind}</span>
@@ -405,7 +408,7 @@ export default function PatientDetail({ patient, patientId, onGoBack, clinicName
         </div>
       )}
 
-      {viewDoc && viewDoc.kind === 'rx' && <PrescriptionSheet rx={viewDoc.data} onClose={() => setViewDoc(null)} clinicName={cn} clinicAddress={ca} />}
+      {viewDoc && viewDoc.kind === 'rx' && <PrescriptionSheet rx={viewDoc.data} onClose={() => setViewDoc(null)} clinicName={cn} clinicAddress={ca} doctorName={doctorName} doctorQualification={doctorQualification} />}
       {viewDoc && viewDoc.kind === 'receipt' && <ReceiptSheet receipt={viewDoc.data} onClose={() => setViewDoc(null)} clinicName={cn} clinicAddress={ca} />}
     </div>
   );

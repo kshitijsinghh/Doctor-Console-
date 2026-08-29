@@ -84,3 +84,48 @@ export function savePatientProblem({ patientId, visitId, patientProblem }) {
   return post({ action: 'savePatientProblem', patientId, visitId, patientProblem });
 }
 
+// ── AWS Backend API ──
+
+const AWS_URL = import.meta.env.VITE_AWS_API_URL;
+const CLINIC_ID = import.meta.env.VITE_CLINIC_ID;
+
+async function awsJson(url, opts) {
+  const res = await fetch(url, opts);
+  if (!res.ok) throw new Error('AWS API error: ' + res.status);
+  const json = await res.json();
+  if (!json.ok) throw new Error(json.error || 'AWS API error');
+  return json;
+}
+
+export async function fetchOrg() {
+  if (!AWS_URL || !CLINIC_ID) return null;
+  try {
+    const json = await awsJson(`${AWS_URL}/org/${CLINIC_ID}`);
+    return json.org;
+  } catch { return null; }
+}
+
+export async function getUploadUrl({ visitId, fileName, fileType, docKind }) {
+  if (!AWS_URL || !CLINIC_ID) return null;
+  return awsJson(`${AWS_URL}/upload`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ clinicId: CLINIC_ID, visitId, fileName, fileType, docKind }),
+  });
+}
+
+export async function uploadToS3(uploadUrl, file) {
+  const res = await fetch(uploadUrl, {
+    method: 'PUT',
+    headers: { 'Content-Type': file.type || 'application/octet-stream' },
+    body: file,
+  });
+  if (!res.ok) throw new Error('S3 upload failed: ' + res.status);
+}
+
+export async function getDocumentUrl(key) {
+  if (!AWS_URL) return null;
+  const json = await awsJson(`${AWS_URL}/document/${encodeURIComponent(key)}`);
+  return json.url;
+}
+

@@ -4,6 +4,7 @@ import {
   MEDICINE_FORMS, FOOD_OPTIONS, DOC_KINDS, SPLIT_CATEGORIES,
 } from '../options';
 import { TOUCH_BTN, FLUID_GRID_2COL } from '../styles';
+import { getUploadUrl, uploadToS3, getDocumentUrl } from '../api';
 
 const fieldStyle = {
   width: '100%', minHeight: 44, padding: '12px 14px', border: '1px solid #d6e7e3', borderRadius: 10,
@@ -210,7 +211,7 @@ function buildReceipt(cf, meta) {
 }
 
 /* ── Print-ready Prescription sheet ── */
-function PrescriptionSheet({ rx, onClose, clinicName, clinicAddress }) {
+function PrescriptionSheet({ rx, onClose, clinicName, clinicAddress, doctorName, doctorQualification }) {
   return (
     <div id="rx-overlay" onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 90, background: 'rgba(14,59,57,.6)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 20, overflow: 'auto' }}>
       <div id="rx-sheet" onClick={(e) => e.stopPropagation()} style={{ background: '#fff', borderRadius: 18, width: '100%', maxWidth: 720, overflow: 'hidden', margin: 'auto' }}>
@@ -268,9 +269,11 @@ function PrescriptionSheet({ rx, onClose, clinicName, clinicAddress }) {
               </table>
             </div>
           )}
-          <div style={{ marginTop: 34, display: 'flex', justifyContent: 'flex-end' }}>
-            <span style={{ textAlign: 'center', fontSize: 12.5, color: '#5c7a76', borderTop: '1px solid #cfe3df', paddingTop: 7, minWidth: 190 }}>Dr. Surmayee Singh<br /><span style={{ fontSize: 11.5, color: '#98b0ab' }}>MDS — Conservative Dentistry & Endodontics</span></span>
-          </div>
+          {(doctorName || doctorQualification) && (
+            <div style={{ marginTop: 34, display: 'flex', justifyContent: 'flex-end' }}>
+              <span style={{ textAlign: 'center', fontSize: 12.5, color: '#5c7a76', borderTop: '1px solid #cfe3df', paddingTop: 7, minWidth: 190 }}>Dr. {doctorName}{doctorQualification ? <><br /><span style={{ fontSize: 11.5, color: '#98b0ab' }}>{doctorQualification}</span></> : null}</span>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -353,7 +356,7 @@ export default function Clinical({
   db, curPatientId,
   labNames,
   readOnly, onCreateNewVisit,
-  clinicName, clinicAddress,
+  clinicName, clinicAddress, doctorName, doctorQualification,
 }) {
   const [step, setStep] = useState(1);
   const [detailVisit, setDetailVisit] = useState(null);
@@ -419,13 +422,25 @@ export default function Clinical({
     if (!files.length) return;
     const kind = (input && input.getAttribute('data-kind')) || 'Other';
     const rowId = input && input.getAttribute('data-row') ? Number(input.getAttribute('data-row')) : null;
-    const readOne = (file) => new Promise((resolve) => {
-      const r = new FileReader();
-      r.onload = () => resolve({ name: file.name, kind, rowId, type: file.type || '', dataUrl: String(r.result || ''), at: Date.now() });
-      r.onerror = () => resolve(null);
-      r.readAsDataURL(file);
-    });
-    Promise.all(files.map(readOne)).then((docs) => {
+    const visitId = cur.visitId;
+
+    const uploadOne = async (file) => {
+      try {
+        const result = await getUploadUrl({ visitId, fileName: file.name, fileType: file.type, docKind: kind });
+        if (result && result.uploadUrl) {
+          await uploadToS3(result.uploadUrl, file);
+          return { name: file.name, kind, rowId, type: file.type || '', s3Key: result.key, at: Date.now() };
+        }
+      } catch { /* fall through to base64 */ }
+      return new Promise((resolve) => {
+        const r = new FileReader();
+        r.onload = () => resolve({ name: file.name, kind, rowId, type: file.type || '', dataUrl: String(r.result || ''), at: Date.now() });
+        r.onerror = () => resolve(null);
+        r.readAsDataURL(file);
+      });
+    };
+
+    Promise.all(files.map(uploadOne)).then((docs) => {
       const good = docs.filter(Boolean);
       if (!good.length) return;
       const existing = rowId !== null ? documents.filter(d => d.rowId !== rowId) : documents;
@@ -483,7 +498,7 @@ export default function Clinical({
           { k: 'Lab description', v: dash(nc.labDescription) },
           { k: "Patient's complaint", v: dash(nc.patientProblem) },
         ],
-        docs: (nc.documents || []).map((d, i) => ({ ...d, idx: i, isImage: /^image/i.test(d.type), href: d.dataUrl })),
+        docs: (nc.documents || []).map((d, i) => ({ ...d, idx: i, isImage: /^image/i.test(d.type), href: d.dataUrl || '', s3Key: d.s3Key || '' })),
         hasDocs: (nc.documents || []).length > 0,
       };
     }
@@ -915,10 +930,10 @@ export default function Clinical({
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(140px,1fr))', gap: 12, marginTop: 14 }}>
               {documents.map((d, i) => (
                 <div key={i} style={{ border: '1px solid #e2efec', borderRadius: 12, overflow: 'hidden', background: '#fbfdfd' }}>
-                  <a href={d.dataUrl} target="_blank" rel="noopener noreferrer" style={{ display: 'block', height: 92, background: '#eef4f3', overflow: 'hidden' }}>
-                    {/^image/i.test(d.type)
+                  <a href={d.dataUrl || '#'} onClick={d.s3Key ? (ev) => { ev.preventDefault(); getDocumentUrl(d.s3Key).then(u => u && window.open(u, '_blank')); } : undefined} target="_blank" rel="noopener noreferrer" style={{ display: 'block', height: 92, background: '#eef4f3', overflow: 'hidden', cursor: 'pointer' }}>
+                    {/^image/i.test(d.type) && d.dataUrl
                       ? <img src={d.dataUrl} alt={d.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                      : <span style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8aa8a3', fontSize: 12, fontWeight: 700 }}>PDF</span>
+                      : <span style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8aa8a3', fontSize: 12, fontWeight: 700 }}>{d.s3Key ? 'S3' : (/^image/i.test(d.type) ? 'IMG' : 'PDF')}</span>
                     }
                   </a>
                   <div style={{ padding: '9px 11px' }}>
@@ -969,10 +984,10 @@ export default function Clinical({
       ) : null}
 
       {/* ── Modals ── */}
-      {rxOpen && <PrescriptionSheet rx={buildRx(cform, meta)} onClose={() => setRxOpen(false)} clinicName={clinicName || 'Surmayee Dental Studio'} clinicAddress={clinicAddress || 'Shop No. 7, 1st Floor, SVG Galleria, Sector 131, Noida · +91 82527 04246'} />}
-      {rcOpen && <ReceiptSheet receipt={buildReceipt(cform, meta)} onClose={() => setRcOpen(false)} clinicName={clinicName || 'Surmayee Dental Studio'} clinicAddress={clinicAddress || 'Sector 131, Noida · +91 82527 04246'} />}
-      {viewDoc && viewDoc.kind === 'rx' && <PrescriptionSheet rx={viewDoc.data} onClose={() => setViewDoc(null)} clinicName={clinicName || 'Surmayee Dental Studio'} clinicAddress={clinicAddress || 'Shop No. 7, 1st Floor, SVG Galleria, Sector 131, Noida · +91 82527 04246'} />}
-      {viewDoc && viewDoc.kind === 'receipt' && <ReceiptSheet receipt={viewDoc.data} onClose={() => setViewDoc(null)} clinicName={clinicName || 'Surmayee Dental Studio'} clinicAddress={clinicAddress || 'Sector 131, Noida · +91 82527 04246'} />}
+      {rxOpen && <PrescriptionSheet rx={buildRx(cform, meta)} onClose={() => setRxOpen(false)} clinicName={clinicName || ''} clinicAddress={clinicAddress || ''} doctorName={doctorName} doctorQualification={doctorQualification} />}
+      {rcOpen && <ReceiptSheet receipt={buildReceipt(cform, meta)} onClose={() => setRcOpen(false)} clinicName={clinicName || ''} clinicAddress={clinicAddress || ''} />}
+      {viewDoc && viewDoc.kind === 'rx' && <PrescriptionSheet rx={viewDoc.data} onClose={() => setViewDoc(null)} clinicName={clinicName || ''} clinicAddress={clinicAddress || ''} doctorName={doctorName} doctorQualification={doctorQualification} />}
+      {viewDoc && viewDoc.kind === 'receipt' && <ReceiptSheet receipt={viewDoc.data} onClose={() => setViewDoc(null)} clinicName={clinicName || ''} clinicAddress={clinicAddress || ''} />}
 
       {detail && (
         <div onClick={() => setDetailVisit(null)} style={{ position: 'fixed', inset: 0, zIndex: 80, background: 'rgba(14,59,57,.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
@@ -996,9 +1011,9 @@ export default function Clinical({
                   <span style={{ display: 'block', fontSize: 12, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: '#8aa8a3', marginBottom: 8 }}>Documents</span>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(120px,1fr))', gap: 10 }}>
                     {detail.docs.map((d) => (
-                      <a key={d.idx} href={d.href} target="_blank" rel="noopener noreferrer" style={{ border: '1px solid #e2efec', borderRadius: 11, overflow: 'hidden', background: '#fbfdfd', display: 'block' }}>
+                      <a key={d.idx} href={d.href || '#'} onClick={d.s3Key ? (ev) => { ev.preventDefault(); getDocumentUrl(d.s3Key).then(u => u && window.open(u, '_blank')); } : undefined} target="_blank" rel="noopener noreferrer" style={{ border: '1px solid #e2efec', borderRadius: 11, overflow: 'hidden', background: '#fbfdfd', display: 'block', cursor: 'pointer' }}>
                         <span style={{ display: 'block', height: 76, background: '#eef4f3', overflow: 'hidden' }}>
-                          {d.isImage ? <img src={d.href} alt={d.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8aa8a3', fontSize: 12, fontWeight: 700 }}>PDF</span>}
+                          {d.isImage && d.href ? <img src={d.href} alt={d.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8aa8a3', fontSize: 12, fontWeight: 700 }}>{d.s3Key ? 'S3' : 'PDF'}</span>}
                         </span>
                         <span style={{ display: 'block', padding: '7px 9px' }}>
                           <span style={{ display: 'block', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: '#0e756c' }}>{d.kind}</span>

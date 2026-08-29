@@ -6,7 +6,7 @@ import Clinical from './views/Clinical';
 import Appointments from './views/Appointments';
 import Patients from './views/Patients';
 import PatientDetail from './views/PatientDetail';
-import { fetchList, saveIntake, saveClinical, uploadQr, getCachedList } from './api';
+import { fetchList, saveIntake, saveClinical, uploadQr, getCachedList, fetchOrg } from './api';
 
 function today() {
   const d = new Date();
@@ -104,6 +104,7 @@ export default function App({ user, onLogout }) {
   const [clinicalError, setClinicalError] = useState('');
   const [showQr, setShowQr] = useState(false);
   const [clinicalReadOnly, setClinicalReadOnly] = useState(false);
+  const [org, setOrg] = useState(null);
 
   function applySnapshot(res) {
     setDbState({ patients: res.patients, order: res.order, seq: res.seq, upiQr: res.upiQr, labNames: res.labNames || [] });
@@ -131,6 +132,7 @@ export default function App({ user, onLogout }) {
     } else {
       loadList(false);
     }
+    fetchOrg().then(o => { if (o) setOrg(o); });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -689,6 +691,8 @@ export default function App({ user, onLogout }) {
           <PatientDetail
             patient={db.patients[detailPid]} patientId={detailPid}
             onGoBack={goBack}
+            clinicName={org?.clinicName} clinicAddress={org ? [org.clinicAddress, ...(org.contactNumbers || []).map(n => '+91 ' + n)].filter(Boolean).join(' · ') : ''}
+            doctorName={org?.doctorName} doctorQualification={org?.doctorQualification}
           />
         )}
 
@@ -729,6 +733,8 @@ export default function App({ user, onLogout }) {
             labNames={db.labNames || []}
             readOnly={clinicalReadOnly}
             onCreateNewVisit={() => onCreateNewVisitFromAppt(curPatientId)}
+            clinicName={org?.clinicName} clinicAddress={org ? [org.clinicAddress, ...(org.contactNumbers || []).map(n => '+91 ' + n)].filter(Boolean).join(' · ') : ''}
+            doctorName={org?.doctorName} doctorQualification={org?.doctorQualification}
           />
         )}
       </main>
