@@ -356,6 +356,8 @@ export default function App({ user, onLogout }) {
       const remaining = num(saveForm.treatmentCost) + prevPending - num(saveForm.amountPaid);
       saveForm.paymentStatus = remaining <= 0 ? 'Fully Paid' : (num(saveForm.amountPaid) > 0 ? 'Partially paid' : 'Not paid');
       saveForm.balanceDue = String(Math.max(0, remaining));
+      // Strip base64 dataUrl — too large for Sheet cells (50K char limit); files go to S3 later
+      saveForm.documents = (saveForm.documents || []).map(({ dataUrl, ...rest }) => rest);
       await saveClinical({ patientId: curPatientId, visitId: curVisitId, cform: saveForm });
     } catch {
       setClinicalError('Auto-save failed — your data is still in the form.');
@@ -375,6 +377,8 @@ export default function App({ user, onLogout }) {
       const remaining = num(saveForm.treatmentCost) + prevPending - num(saveForm.amountPaid);
       saveForm.paymentStatus = remaining <= 0 ? 'Fully Paid' : (num(saveForm.amountPaid) > 0 ? 'Partially paid' : 'Not paid');
       saveForm.balanceDue = String(Math.max(0, remaining));
+      // Strip base64 dataUrl — too large for Sheet cells (50K char limit); files go to S3 later
+      saveForm.documents = (saveForm.documents || []).map(({ dataUrl, ...rest }) => rest);
       const res = await saveClinical({ patientId: curPatientId, visitId: curVisitId, cform: saveForm });
       applySnapshot(res);
       setSavedFlash(true);

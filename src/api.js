@@ -29,7 +29,7 @@ function assertConfigured() {
 async function handle(res) {
   if (!res.ok) throw new Error('Something went wrong, please try again');
   const json = await res.json();
-  if (!json.ok) throw new Error('Something went wrong, please try again');
+  if (!json.ok) throw new Error(json.error || 'Something went wrong, please try again');
   return json;
 }
 
