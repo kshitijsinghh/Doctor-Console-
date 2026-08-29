@@ -390,7 +390,7 @@ export default function PatientDetail({ patient, patientId, onGoBack, clinicName
                   <span style={{ display: 'block', fontSize: 12, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: '#8aa8a3', marginBottom: 8 }}>Documents</span>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(120px,1fr))', gap: 10 }}>
                     {detail.docs.map((d, i) => (
-                      <a key={i} href={d.dataUrl || '#'} onClick={d.s3Key ? (ev) => { ev.preventDefault(); getDocumentUrl(d.s3Key).then(u => u && window.open(u, '_blank')); } : undefined} target="_blank" rel="noopener noreferrer" style={{ border: '1px solid #e2efec', borderRadius: 11, overflow: 'hidden', background: '#fbfdfd', display: 'block', cursor: 'pointer' }}>
+                      <a key={i} href={d.dataUrl || '#'} onClick={d.s3Key ? (ev) => { ev.preventDefault(); getDocumentUrl(d.s3Key).then(u => u && window.open(u, '_blank')).catch(() => {}); } : undefined} target="_blank" rel="noopener noreferrer" style={{ border: '1px solid #e2efec', borderRadius: 11, overflow: 'hidden', background: '#fbfdfd', display: 'block', cursor: 'pointer' }}>
                         <span style={{ display: 'block', height: 76, background: '#eef4f3', overflow: 'hidden' }}>
                           {/^image/i.test(d.type) && d.dataUrl ? <img src={d.dataUrl} alt={d.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8aa8a3', fontSize: 12, fontWeight: 700 }}>{d.s3Key ? 'S3' : 'PDF'}</span>}
                         </span>

@@ -930,7 +930,7 @@ export default function Clinical({
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(140px,1fr))', gap: 12, marginTop: 14 }}>
               {documents.map((d, i) => (
                 <div key={i} style={{ border: '1px solid #e2efec', borderRadius: 12, overflow: 'hidden', background: '#fbfdfd' }}>
-                  <a href={d.dataUrl || '#'} onClick={d.s3Key ? (ev) => { ev.preventDefault(); getDocumentUrl(d.s3Key).then(u => u && window.open(u, '_blank')); } : undefined} target="_blank" rel="noopener noreferrer" style={{ display: 'block', height: 92, background: '#eef4f3', overflow: 'hidden', cursor: 'pointer' }}>
+                  <a href={d.dataUrl || '#'} onClick={d.s3Key ? (ev) => { ev.preventDefault(); getDocumentUrl(d.s3Key).then(u => u && window.open(u, '_blank')).catch(() => {}); } : undefined} target="_blank" rel="noopener noreferrer" style={{ display: 'block', height: 92, background: '#eef4f3', overflow: 'hidden', cursor: 'pointer' }}>
                     {/^image/i.test(d.type) && d.dataUrl
                       ? <img src={d.dataUrl} alt={d.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                       : <span style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8aa8a3', fontSize: 12, fontWeight: 700 }}>{d.s3Key ? 'S3' : (/^image/i.test(d.type) ? 'IMG' : 'PDF')}</span>
@@ -1011,7 +1011,7 @@ export default function Clinical({
                   <span style={{ display: 'block', fontSize: 12, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: '#8aa8a3', marginBottom: 8 }}>Documents</span>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(120px,1fr))', gap: 10 }}>
                     {detail.docs.map((d) => (
-                      <a key={d.idx} href={d.href || '#'} onClick={d.s3Key ? (ev) => { ev.preventDefault(); getDocumentUrl(d.s3Key).then(u => u && window.open(u, '_blank')); } : undefined} target="_blank" rel="noopener noreferrer" style={{ border: '1px solid #e2efec', borderRadius: 11, overflow: 'hidden', background: '#fbfdfd', display: 'block', cursor: 'pointer' }}>
+                      <a key={d.idx} href={d.href || '#'} onClick={d.s3Key ? (ev) => { ev.preventDefault(); getDocumentUrl(d.s3Key).then(u => u && window.open(u, '_blank')).catch(() => {}); } : undefined} target="_blank" rel="noopener noreferrer" style={{ border: '1px solid #e2efec', borderRadius: 11, overflow: 'hidden', background: '#fbfdfd', display: 'block', cursor: 'pointer' }}>
                         <span style={{ display: 'block', height: 76, background: '#eef4f3', overflow: 'hidden' }}>
                           {d.isImage && d.href ? <img src={d.href} alt={d.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8aa8a3', fontSize: 12, fontWeight: 700 }}>{d.s3Key ? 'S3' : 'PDF'}</span>}
                         </span>

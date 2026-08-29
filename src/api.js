@@ -125,7 +125,8 @@ export async function uploadToS3(uploadUrl, file) {
 
 export async function getDocumentUrl(key) {
   if (!AWS_URL) return null;
-  const json = await awsJson(`${AWS_URL}/document/${encodeURIComponent(key)}`);
+  const safePath = key.split('/').map(encodeURIComponent).join('/');
+  const json = await awsJson(`${AWS_URL}/document/${safePath}`);
   return json.url;
 }
 
