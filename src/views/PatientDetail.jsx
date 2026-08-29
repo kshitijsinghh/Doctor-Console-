@@ -34,6 +34,12 @@ function medDoseText(m) {
   if (m.night) parts.push('1 Night');
   return parts.length ? parts.join(', ') : '—';
 }
+function fileTypeLabel(type) {
+  if (!type) return 'File';
+  if (/^image/i.test(type)) return 'Image';
+  if (/pdf/i.test(type)) return 'PDF';
+  return 'File';
+}
 
 const PAY_MAP = {
   'Fully Paid': ['#e3f5ec', '#12805a'],
@@ -72,7 +78,7 @@ function buildDetailRows(v, p) {
   add('Lab tooth number', c.labToothNumber || listLabel(c.toothNumber));
   add('Lab description', c.labDescription);
   add("Patient's complaint", c.patientProblem);
-  return { rows, docs: (c.documents || []).filter(d => d.dataUrl || d.s3Key), hasDocs: (c.documents || []).some(d => d.dataUrl || d.s3Key) };
+  return { rows };
 }
 
 function PrescriptionSheet({ rx, onClose, clinicName, clinicAddress, doctorName, doctorQualification }) {
@@ -205,9 +211,63 @@ function ReceiptSheet({ receipt, onClose, clinicName, clinicAddress }) {
   );
 }
 
+function FilesPopup({ filesVisit, patient, onClose }) {
+  const nc = normalizeClinical(filesVisit.clinical || {});
+  const docs = (nc.documents || []).filter(d => d.dataUrl || d.s3Key);
+  const countLabel = docs.length === 1 ? '1 document' : docs.length + ' documents';
+
+  function onView(ev, d) {
+    if (d.s3Key) {
+      ev.preventDefault();
+      getDocumentUrl(d.s3Key).then(u => u && window.open(u, '_blank')).catch(() => {});
+    }
+  }
+
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 95, background: 'rgba(14,59,57,.6)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 20, overflow: 'auto' }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: '#fff', borderRadius: 20, width: '100%', maxWidth: 520, overflow: 'hidden', margin: 'auto' }}>
+        <div style={{ background: '#0e3b39', color: '#fff', padding: '16px 20px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+          <div style={{ minWidth: 0 }}>
+            <span style={{ display: 'block', fontFamily: 'ui-monospace,monospace', fontSize: 12.5, color: '#7fd4c9', fontWeight: 700 }}>{filesVisit.visitId}</span>
+            <span style={{ display: 'block', fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: 17 }}>Documents</span>
+            <span style={{ display: 'block', fontSize: 12.5, color: '#bfe3dd', marginTop: 1 }}>{patient.name} · {fmtDate(filesVisit.date)} · {countLabel}</span>
+          </div>
+          <button onClick={onClose} style={{ flexShrink: 0, width: 32, height: 32, borderRadius: 9, border: 0, background: 'rgba(255,255,255,.15)', color: '#fff', fontSize: 15, cursor: 'pointer' }}>✕</button>
+        </div>
+        <div style={{ padding: '14px 18px 20px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {docs.map((d, i) => {
+            const isImage = /^image/i.test(d.type);
+            return (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 13, border: '1px solid #e2efec', borderRadius: 14, padding: '11px 13px', background: '#fbfdfd' }}>
+                <span style={{ flex: '0 0 auto', width: 52, height: 52, borderRadius: 11, background: '#eef4f3', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  {isImage && d.dataUrl
+                    ? <img src={d.dataUrl} alt={d.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    : <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#8aa8a3" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7z"/><path d="M14 2v5h5"/></svg>
+                  }
+                </span>
+                <span style={{ flex: 1, minWidth: 0, lineHeight: 1.35 }}>
+                  <span style={{ display: 'block', fontSize: 11, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: '#0e756c' }}>{d.kind || 'Other'}</span>
+                  <span style={{ display: 'block', fontSize: 14, color: '#0e3b39', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.name}</span>
+                  <span style={{ display: 'block', fontSize: 12, color: '#98b0ab' }}>{fileTypeLabel(d.type)}</span>
+                </span>
+                <a href={d.dataUrl || '#'} onClick={(ev) => onView(ev, d)} target="_blank" rel="noopener noreferrer"
+                  style={{ flex: '0 0 auto', padding: '9px 14px', borderRadius: 10, border: '1px solid #cfe3df', background: '#f2f9f8', color: '#0e756c', fontWeight: 700, fontSize: 13, display: 'inline-flex', alignItems: 'center', gap: 7, textDecoration: 'none', cursor: 'pointer' }}>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/></svg>
+                  View
+                </a>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function PatientDetail({ patient, patientId, onGoBack, clinicName, clinicAddress, doctorName, doctorQualification }) {
   const [detailVisit, setDetailVisit] = useState(null);
   const [viewDoc, setViewDoc] = useState(null);
+  const [filesVisit, setFilesVisit] = useState(null);
 
   if (!patient) return null;
 
@@ -243,7 +303,10 @@ export default function PatientDetail({ patient, patientId, onGoBack, clinicName
     const [vBg, vInk] = PAY_MAP[ps] || ['#eef4f3', '#8aa8a3'];
     const hasMeds = (nc.medicines || []).some(m => m.name);
     const hasPaid = num(nc.amountPaid) > 0;
-    return { visitId: v.visitId, dateLabel: fmtDate(v.date), treatmentLabel: tr, costLabel: cost ? inr(cost) : '—', balanceLabel: balance ? inr(balance) : '—', status: ps, stBg: vBg, stInk: vInk, visit: v, hasMeds, hasPaid, nc };
+    const fileDocs = (nc.documents || []).filter(d => d.dataUrl || d.s3Key);
+    const hasFiles = fileDocs.length > 0;
+    const filesCount = fileDocs.length;
+    return { visitId: v.visitId, dateLabel: fmtDate(v.date), treatmentLabel: tr, costLabel: cost ? inr(cost) : '—', balanceLabel: balance ? inr(balance) : '—', status: ps, stBg: vBg, stInk: vInk, visit: v, hasMeds, hasPaid, nc, hasFiles, filesCount };
   });
 
   function openRx(vc) {
@@ -256,6 +319,8 @@ export default function PatientDetail({ patient, patientId, onGoBack, clinicName
   }
 
   const detail = detailVisit ? buildDetailRows(detailVisit, p) : null;
+
+  const chipStyle = { padding: '7px 13px', borderRadius: 9, border: '1px solid #cfe3df', background: '#f2f9f8', color: '#0e756c', fontWeight: 700, fontSize: 12.5, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 };
 
   return (
     <div style={{ maxWidth: 840, margin: '0 auto' }}>
@@ -317,33 +382,39 @@ export default function PatientDetail({ patient, patientId, onGoBack, clinicName
         {visitCards.length > 0 ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {visitCards.map((vc) => (
-              <div key={vc.visitId} style={{ border: '1px solid #eef4f3', borderRadius: 12, background: '#fff', overflow: 'hidden' }}>
-                <button onClick={() => setDetailVisit(vc.visit)}
-                  style={{
-                    textAlign: 'left', border: 0, borderRadius: 0, background: 'transparent',
-                    padding: '13px 15px', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 6, width: '100%',
-                  }}>
-                  <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, width: '100%' }}>
+              <div key={vc.visitId} style={{ border: '1px solid #eef4f3', borderRadius: 12, background: '#fff', padding: '13px 15px' }}>
+                <div onClick={() => setDetailVisit(vc.visit)}
+                  style={{ textAlign: 'left', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
                     <span style={{ fontFamily: 'ui-monospace,monospace', fontSize: 12, color: '#0e756c', fontWeight: 700 }}>{vc.visitId}</span>
-                    <span style={{ display: 'inline-block', padding: '3px 10px', borderRadius: 100, fontSize: 11.5, fontWeight: 700, background: vc.stBg, color: vc.stInk }}>{vc.status}</span>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ display: 'inline-block', padding: '3px 10px', borderRadius: 100, fontSize: 11.5, fontWeight: 700, background: vc.stBg, color: vc.stInk }}>{vc.status}</span>
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#98b0ab" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M9 6l6 6-6 6"/></svg>
+                    </span>
                   </span>
                   <span style={{ fontSize: 14, color: '#33534f' }}>{vc.treatmentLabel}</span>
                   <span style={{ display: 'flex', flexWrap: 'wrap', columnGap: 14, fontSize: 12.5, color: '#5c7a76' }}>
                     {vc.dateLabel} · Cost {vc.costLabel} · Balance {vc.balanceLabel}
                   </span>
-                </button>
-                {(vc.hasMeds || vc.hasPaid) && (
-                  <div style={{ borderTop: '1px solid #eef4f3', padding: '8px 15px', display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                </div>
+                {(vc.hasMeds || vc.hasPaid || vc.hasFiles) && (
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 11, paddingTop: 11, borderTop: '1px solid #f0f6f5' }}>
                     {vc.hasMeds && (
-                      <button onClick={() => openRx(vc)} style={{ padding: '7px 14px', borderRadius: 9, border: '1px solid #cfe3df', background: '#f2f9f8', color: '#0e756c', fontWeight: 700, fontSize: 12.5, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                      <button onClick={() => openRx(vc)} style={chipStyle}>
                         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7z"/><path d="M14 2v5h5M9 13h6M9 17h4"/></svg>
                         Prescription
                       </button>
                     )}
                     {vc.hasPaid && (
-                      <button onClick={() => openReceipt(vc)} style={{ padding: '7px 14px', borderRadius: 9, border: '1px solid #cfe3df', background: '#f2f9f8', color: '#0e756c', fontWeight: 700, fontSize: 12.5, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                      <button onClick={() => openReceipt(vc)} style={chipStyle}>
                         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 2h12v20l-3-2-3 2-3-2-3 2V2z"/><path d="M9 8h6M9 12h6"/></svg>
                         Payment receipt
+                      </button>
+                    )}
+                    {vc.hasFiles && (
+                      <button onClick={(e) => { e.stopPropagation(); setFilesVisit(vc.visit); }} style={chipStyle}>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 6a2 2 0 0 1 2-2h3l2 2h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/></svg>
+                        Documents ({vc.filesCount})
                       </button>
                     )}
                   </div>
@@ -385,28 +456,12 @@ export default function PatientDetail({ patient, patientId, onGoBack, clinicName
                   <span style={{ fontSize: 14, color: '#33534f', textAlign: 'right' }}>{r.v}</span>
                 </div>
               ))}
-              {detail.hasDocs && (
-                <div style={{ marginTop: 14 }}>
-                  <span style={{ display: 'block', fontSize: 12, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: '#8aa8a3', marginBottom: 8 }}>Documents</span>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(120px,1fr))', gap: 10 }}>
-                    {detail.docs.map((d, i) => (
-                      <a key={i} href={d.dataUrl || '#'} onClick={d.s3Key ? (ev) => { ev.preventDefault(); getDocumentUrl(d.s3Key).then(u => u && window.open(u, '_blank')).catch(() => {}); } : undefined} target="_blank" rel="noopener noreferrer" style={{ border: '1px solid #e2efec', borderRadius: 11, overflow: 'hidden', background: '#fbfdfd', display: 'block', cursor: 'pointer' }}>
-                        <span style={{ display: 'block', height: 76, background: '#eef4f3', overflow: 'hidden' }}>
-                          {/^image/i.test(d.type) && d.dataUrl ? <img src={d.dataUrl} alt={d.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8aa8a3', fontSize: 12, fontWeight: 700 }}>{d.s3Key ? 'S3' : 'PDF'}</span>}
-                        </span>
-                        <span style={{ display: 'block', padding: '7px 9px' }}>
-                          <span style={{ display: 'block', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: '#0e756c' }}>{d.kind}</span>
-                          <span style={{ display: 'block', fontSize: 12, color: '#5c7a76', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.name}</span>
-                        </span>
-                      </a>
-                    ))}
-                  </div>
-                </div>
-              )}
             </div>
           </div>
         </div>
       )}
+
+      {filesVisit && <FilesPopup filesVisit={filesVisit} patient={p} onClose={() => setFilesVisit(null)} />}
 
       {viewDoc && viewDoc.kind === 'rx' && <PrescriptionSheet rx={viewDoc.data} onClose={() => setViewDoc(null)} clinicName={cn} clinicAddress={ca} doctorName={doctorName} doctorQualification={doctorQualification} />}
       {viewDoc && viewDoc.kind === 'receipt' && <ReceiptSheet receipt={viewDoc.data} onClose={() => setViewDoc(null)} clinicName={cn} clinicAddress={ca} />}
