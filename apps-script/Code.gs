@@ -41,6 +41,7 @@ var VISITS_HEADERS = [
   'labName', 'labToothNumber', 'labDescription',
   'calendarEventId',
   'patientProblem', 'queueNumber',
+  'medicines', 'paySplits', 'documents',
 ];
 
 function doGet(e) {
@@ -196,12 +197,12 @@ function readSnapshot_() {
       clinical: {
         patientType: v.patientType || '',
         medicalHistory: v.medicalHistory || '',
-        chiefComplaint: v.chiefComplaint || '',
+        chiefComplaint: parseJsonOrString_(v.chiefComplaint),
         chiefDescription: v.chiefDescription || '',
-        treatmentGroup: v.treatmentGroup || '',
-        treatment: v.treatment || '',
-        advisedTreatment: v.advisedTreatment || '',
-        toothNumber: v.toothNumber instanceof Date ? '' : String(v.toothNumber || ''),
+        treatmentGroup: parseJsonOrString_(v.treatmentGroup),
+        treatment: parseJsonOrString_(v.treatment),
+        advisedTreatment: parseJsonOrString_(v.advisedTreatment),
+        toothNumber: parseJsonOrString_(v.toothNumber instanceof Date ? '' : String(v.toothNumber || '')),
         treatmentOther: v.treatmentOther || '',
         advisedTreatmentOther: v.advisedTreatmentOther || '',
         treatmentCost: v.treatmentCost === '' ? '' : String(v.treatmentCost),
@@ -218,6 +219,9 @@ function readSnapshot_() {
         labToothNumber: v.labToothNumber instanceof Date ? '' : String(v.labToothNumber || ''),
         labDescription: v.labDescription || '',
         patientProblem: v.patientProblem || '',
+        medicines: parseJsonArr_(v.medicines),
+        paySplits: parseJsonArr_(v.paySplits),
+        documents: parseJsonArr_(v.documents),
       },
       queueNumber: v.queueNumber === '' ? '' : (typeof v.queueNumber === 'number' ? v.queueNumber : (parseInt(v.queueNumber, 10) || '')),
     });
@@ -242,6 +246,21 @@ function readSnapshot_() {
 
 function formatDate_(d) {
   return Utilities.formatDate(d, Session.getScriptTimeZone() || 'Etc/UTC', 'yyyy-MM-dd');
+}
+
+function parseJsonArr_(val) {
+  if (!val || val === '') return [];
+  try { var parsed = JSON.parse(val); return Array.isArray(parsed) ? parsed : []; }
+  catch (e) { return []; }
+}
+
+function parseJsonOrString_(val) {
+  if (!val || val === '') return [];
+  var s = String(val);
+  if (s.charAt(0) === '[') {
+    try { var parsed = JSON.parse(s); if (Array.isArray(parsed)) return parsed; } catch (e) {}
+  }
+  return [s];
 }
 
 // ---------- Google Calendar integration ----------
@@ -442,15 +461,16 @@ function action_saveClinical_(body) {
     var balanceDue = remaining;
     var paymentStatus = remaining <= 0 ? 'Fully Paid' : (num(cform.amountPaid) > 0 ? 'Partially paid' : 'Not paid');
     var r = targetRow + 2;
+    var jsonField = function(val) { return Array.isArray(val) ? JSON.stringify(val) : (val || ''); };
     var fields = {
       patientType: cform.patientType || '',
       medicalHistory: cform.medicalHistory || '',
-      chiefComplaint: cform.chiefComplaint || '',
+      chiefComplaint: jsonField(cform.chiefComplaint),
       chiefDescription: cform.chiefDescription || '',
-      treatmentGroup: cform.treatmentGroup || '',
-      treatment: cform.treatment || '',
-      advisedTreatment: cform.advisedTreatment || '',
-      toothNumber: cform.toothNumber || '',
+      treatmentGroup: jsonField(cform.treatmentGroup),
+      treatment: jsonField(cform.treatment),
+      advisedTreatment: jsonField(cform.advisedTreatment),
+      toothNumber: jsonField(cform.toothNumber),
       treatmentOther: cform.treatmentOther || '',
       advisedTreatmentOther: cform.advisedTreatmentOther || '',
       treatmentCost: cform.treatmentCost || '',
@@ -466,11 +486,15 @@ function action_saveClinical_(body) {
       labName: cform.labName || '',
       labToothNumber: cform.labToothNumber || '',
       labDescription: cform.labDescription || '',
+      medicines: JSON.stringify(cform.medicines || []),
+      paySplits: JSON.stringify(cform.paySplits || []),
+      documents: JSON.stringify(cform.documents || []),
       done: true,
     };
     for (var key in fields) {
+      if (vData.idx[key] === undefined) continue;
       var cell = visitsSh.getRange(r, vData.idx[key] + 1);
-      if (key === 'toothNumber' || key === 'labToothNumber' || key === 'nextAppointmentTime') cell.setNumberFormat('@');
+      if (key === 'toothNumber' || key === 'labToothNumber' || key === 'nextAppointmentTime' || key === 'medicines' || key === 'paySplits' || key === 'documents' || key === 'chiefComplaint' || key === 'treatmentGroup' || key === 'treatment' || key === 'advisedTreatment') cell.setNumberFormat('@');
       cell.setValue(fields[key]);
     }
 
