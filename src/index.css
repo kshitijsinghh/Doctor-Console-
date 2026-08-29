@@ -54,6 +54,16 @@ input:focus, select:focus, textarea:focus {
   to { transform: rotate(360deg); }
 }
 
+/* Hide number input spinners */
+input[type=number]::-webkit-inner-spin-button,
+input[type=number]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type=number] {
+  -moz-appearance: textfield;
+}
+
 @media (max-width: 760px) {
   .table-view {
     display: none;
@@ -64,4 +74,23 @@ input:focus, select:focus, textarea:focus {
   .stat-desktop-only {
     display: none;
   }
+}
+
+/* Print rules: show only the prescription/receipt sheet */
+@media print {
+  body * { visibility: hidden; }
+  #rx-overlay, #rx-overlay * { visibility: visible; }
+  #rx-overlay {
+    position: absolute !important;
+    inset: 0 !important;
+    background: none !important;
+    padding: 0 !important;
+  }
+  #rx-sheet {
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    max-width: none !important;
+    margin: 0 !important;
+  }
+  #rx-chrome { display: none !important; }
 }

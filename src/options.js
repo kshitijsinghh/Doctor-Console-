@@ -45,3 +45,8 @@ export const PATIENT_TYPES = ['Adult', 'Kid'];
 export const PAYMENT_MODES = ['Cash', 'UPI', 'Debit Card', 'Credit Card'];
 export const YES_NO = ['Yes', 'No'];
 export const TREATMENT_STAGES = ['Complete', 'In Progress', 'Follow Up Pending'];
+
+export const MEDICINE_FORMS = ['Tablet', 'Capsule', 'Syrup', 'Gel', 'Ointment', 'Mouthwash', 'Injection', 'Drops', 'Powder', 'Spray'];
+export const FOOD_OPTIONS = ['After Food', 'Before Food'];
+export const DOC_KINDS = ['X-Ray', 'Prescription', 'Medical report', 'Other'];
+export const SPLIT_CATEGORIES = ['Treatment', 'X-ray', 'OPD', 'Medicine', 'Lab work', 'Custom'];

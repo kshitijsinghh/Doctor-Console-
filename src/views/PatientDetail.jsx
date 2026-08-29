@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { buildRx, buildReceipt, normalizeClinical } from './Clinical';
 
 function num(x) { const n = parseFloat(x); return isNaN(n) ? 0 : n; }
 function inr(n) { return '₹' + Math.round(n).toLocaleString('en-IN'); }
@@ -13,6 +14,25 @@ function fmtTime(t) {
   const [h, m] = t.split(':').map(Number);
   return (h % 12 || 12) + ':' + String(m).padStart(2, '0') + ' ' + (h >= 12 ? 'PM' : 'AM');
 }
+function listLabel(v, fallback) {
+  if (Array.isArray(v)) return v.length ? v.join(', ') : (fallback || '');
+  return v || fallback || '';
+}
+function trLabel(c) {
+  if (!c) return '';
+  const t = Array.isArray(c.treatment) ? c.treatment : (c.treatment ? [c.treatment] : []);
+  const hasOther = t.some(x => /Other/.test(x));
+  if (hasOther && c.treatmentOther) return [...t.filter(x => !/Other/.test(x)), c.treatmentOther].join(', ');
+  return t.join(', ');
+}
+function medDoseText(m) {
+  const parts = [];
+  if (m.morning) parts.push('1 Morning');
+  if (m.afternoon) parts.push('1 Afternoon');
+  if (m.evening) parts.push('1 Evening');
+  if (m.night) parts.push('1 Night');
+  return parts.length ? parts.join(', ') : '—';
+}
 
 const PAY_MAP = {
   'Fully Paid': ['#e3f5ec', '#12805a'],
@@ -20,17 +40,22 @@ const PAY_MAP = {
   'Not paid': ['#fdecea', '#c0392b'],
 };
 
-function buildDetailRows(v) {
-  const c = v.clinical || {};
+function buildDetailRows(v, p) {
+  const c = normalizeClinical(v.clinical || {});
   const rows = [];
   const add = (k, val) => { if (val) rows.push({ k, v: val }); };
   add('Date', fmtDate(v.date));
   add('Medical history', c.medicalHistory);
-  add('Chief complaint', c.chiefComplaint);
+  add('Chief complaint', listLabel(c.chiefComplaint));
   add('Description', c.chiefDescription);
-  add('Treatment group', c.treatmentGroup);
-  add('Current treatment', /Other/.test(c.treatment) && c.treatmentOther ? c.treatmentOther : c.treatment);
-  add('Advised treatment', /Other/.test(c.advisedTreatment) && c.advisedTreatmentOther ? c.advisedTreatmentOther : c.advisedTreatment);
+  add('Treatment group', listLabel(c.treatmentGroup));
+  add('Current treatment', trLabel(c));
+  add('Advised treatment', listLabel(c.advisedTreatment));
+  add('Tooth number', listLabel(c.toothNumber));
+  const meds = (c.medicines || []).filter(m => m.name);
+  if (meds.length) {
+    add('Medicines', meds.map(m => m.name + ' — ' + medDoseText(m) + ', ' + m.food + (m.duration ? ', ' + m.duration + ' days' : '')).join(' · '));
+  }
   if (num(c.treatmentCost)) add('Treatment cost', inr(num(c.treatmentCost)));
   if (num(c.amountPaid)) add('Amount paid', inr(num(c.amountPaid)));
   if (c.balanceDue !== undefined && c.balanceDue !== '') add('Balance due', inr(num(c.balanceDue)));
@@ -42,18 +67,149 @@ function buildDetailRows(v) {
     add('Next appointment', fmtDate(c.nextAppointment) + (c.nextAppointmentTime ? ' at ' + fmtTime(c.nextAppointmentTime) : ''));
   }
   add('Comments', c.comments);
-  add('Tooth number', c.toothNumber);
   add('Lab name', c.labName);
-  add('Lab tooth number', c.labToothNumber || c.toothNumber);
+  add('Lab tooth number', c.labToothNumber || listLabel(c.toothNumber));
   add('Lab description', c.labDescription);
   add("Patient's complaint", c.patientProblem);
-  return rows;
+  return { rows, docs: (c.documents || []).filter(d => d.dataUrl), hasDocs: (c.documents || []).some(d => d.dataUrl) };
 }
 
-export default function PatientDetail({ patient, patientId, onGoBack }) {
+function PrescriptionSheet({ rx, onClose, clinicName, clinicAddress }) {
+  return (
+    <div id="rx-overlay" onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 90, background: 'rgba(14,59,57,.6)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 20, overflow: 'auto' }}>
+      <div id="rx-sheet" onClick={(e) => e.stopPropagation()} style={{ background: '#fff', borderRadius: 18, width: '100%', maxWidth: 720, overflow: 'hidden', margin: 'auto' }}>
+        <div id="rx-chrome" style={{ background: '#0e3b39', color: '#fff', padding: '14px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+          <span style={{ fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: 16 }}>E-Prescription</span>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={() => window.print()} style={{ padding: '8px 15px', borderRadius: 9, border: 0, background: '#12a094', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Print / Save PDF</button>
+            <button onClick={onClose} style={{ width: 32, height: 32, borderRadius: 8, border: 0, background: 'rgba(255,255,255,.15)', color: '#fff', fontSize: 15, cursor: 'pointer' }}>✕</button>
+          </div>
+        </div>
+        <div style={{ padding: '26px 28px 30px' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, borderBottom: '2px solid #0e756c', paddingBottom: 14, flexWrap: 'wrap' }}>
+            <div>
+              <span style={{ display: 'block', fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: 20, color: '#0e3b39' }}>{clinicName}</span>
+              <span style={{ display: 'block', fontSize: 12, color: '#5c7a76', marginTop: 2 }}>{clinicAddress}</span>
+            </div>
+            <span style={{ flexShrink: 0, textAlign: 'right', fontSize: 12, color: '#5c7a76', lineHeight: 1.5 }}>
+              <span style={{ display: 'block' }}>Date: <strong style={{ color: '#0e3b39' }}>{rx.dateLabel}</strong></span>
+              <span style={{ display: 'block', fontFamily: 'ui-monospace,monospace' }}>{rx.visitId}</span>
+            </span>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))', gap: '10px 22px', marginTop: 16, fontSize: 13.5 }}>
+            <span style={{ color: '#5c7a76' }}>Patient: <strong style={{ color: '#0e3b39' }}>{rx.name}</strong></span>
+            <span style={{ color: '#5c7a76' }}>Age / Gender: <strong style={{ color: '#0e3b39' }}>{rx.ageGender}</strong></span>
+            <span style={{ color: '#5c7a76' }}>Mobile: <strong style={{ color: '#0e3b39' }}>{rx.mobile}</strong></span>
+            <span style={{ color: '#5c7a76' }}>Medical history: <strong style={{ color: '#0e3b39' }}>{rx.medicalHistory}</strong></span>
+          </div>
+          <div style={{ marginTop: 18, padding: '14px 16px', borderRadius: 12, background: '#f7fbfa', border: '1px solid #e2efec', display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))', gap: '10px 22px', fontSize: 13.5 }}>
+            <span style={{ color: '#5c7a76' }}>Chief complaint: <strong style={{ color: '#0e3b39' }}>{rx.chiefComplaint}</strong></span>
+            <span style={{ color: '#5c7a76' }}>Description: <strong style={{ color: '#0e3b39' }}>{rx.description}</strong></span>
+            <span style={{ color: '#5c7a76' }}>Treatment group: <strong style={{ color: '#0e3b39' }}>{rx.treatmentGroup}</strong></span>
+            <span style={{ color: '#5c7a76' }}>Tooth number: <strong style={{ color: '#0e3b39' }}>{rx.toothNumber}</strong></span>
+            <span style={{ color: '#5c7a76' }}>Current treatment: <strong style={{ color: '#0e3b39' }}>{rx.treatment}</strong></span>
+            <span style={{ color: '#5c7a76' }}>Advised treatment: <strong style={{ color: '#0e3b39' }}>{rx.advisedTreatment}</strong></span>
+          </div>
+          <p style={{ fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: 15, color: '#0e3b39', margin: '20px 0 8px' }}>℞ Prescription</p>
+          {rx.noMeds && <p style={{ fontSize: 13.5, color: '#98b0ab' }}>No medicine prescribed.</p>}
+          {rx.hasMeds && (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 480 }}>
+                <thead><tr style={{ textAlign: 'left', color: '#7a9994', fontSize: 11, letterSpacing: '.05em', textTransform: 'uppercase', borderBottom: '1px solid #e2efec' }}>
+                  <th style={{ padding: '8px 6px', fontWeight: 700 }}>#</th><th style={{ padding: '8px 6px', fontWeight: 700 }}>Medicine</th><th style={{ padding: '8px 6px', fontWeight: 700 }}>Dosage</th><th style={{ padding: '8px 6px', fontWeight: 700 }}>Food</th><th style={{ padding: '8px 6px', fontWeight: 700 }}>Duration</th>
+                </tr></thead>
+                <tbody>
+                  {rx.meds.map((rm) => (
+                    <tr key={rm.sn} style={{ borderBottom: '1px solid #f0f6f5' }}>
+                      <td style={{ padding: '9px 6px', color: '#8aa8a3' }}>{rm.sn}</td>
+                      <td style={{ padding: '9px 6px', color: '#0e3b39', fontWeight: 700 }}>{rm.name} <span style={{ color: '#98b0ab', fontWeight: 400 }}>({rm.unit})</span></td>
+                      <td style={{ padding: '9px 6px', color: '#33534f' }}>{rm.dose} <span style={{ color: '#98b0ab' }}>{rm.total}</span></td>
+                      <td style={{ padding: '9px 6px', color: '#33534f' }}>{rm.food}</td>
+                      <td style={{ padding: '9px 6px', color: '#33534f' }}>{rm.duration}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <div style={{ marginTop: 34, display: 'flex', justifyContent: 'flex-end' }}>
+            <span style={{ textAlign: 'center', fontSize: 12.5, color: '#5c7a76', borderTop: '1px solid #cfe3df', paddingTop: 7, minWidth: 190 }}>Dr. Surmayee Singh<br /><span style={{ fontSize: 11.5, color: '#98b0ab' }}>MDS — Conservative Dentistry & Endodontics</span></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ReceiptSheet({ receipt, onClose, clinicName, clinicAddress }) {
+  return (
+    <div id="rx-overlay" onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 90, background: 'rgba(14,59,57,.6)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 20, overflow: 'auto' }}>
+      <div id="rx-sheet" onClick={(e) => e.stopPropagation()} style={{ background: '#fff', borderRadius: 18, width: '100%', maxWidth: 560, overflow: 'hidden', margin: 'auto' }}>
+        <div id="rx-chrome" style={{ background: '#0e3b39', color: '#fff', padding: '14px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+          <span style={{ fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: 16 }}>Payment Receipt</span>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={() => window.print()} style={{ padding: '8px 15px', borderRadius: 9, border: 0, background: '#12a094', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Print / Save PDF</button>
+            <button onClick={onClose} style={{ width: 32, height: 32, borderRadius: 8, border: 0, background: 'rgba(255,255,255,.15)', color: '#fff', fontSize: 15, cursor: 'pointer' }}>✕</button>
+          </div>
+        </div>
+        <div style={{ padding: '26px 28px 30px' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, borderBottom: '2px solid #0e756c', paddingBottom: 14, flexWrap: 'wrap' }}>
+            <div>
+              <span style={{ display: 'block', fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: 19, color: '#0e3b39' }}>{clinicName}</span>
+              <span style={{ display: 'block', fontSize: 12, color: '#5c7a76', marginTop: 2 }}>{clinicAddress}</span>
+            </div>
+            <span style={{ flexShrink: 0, textAlign: 'right', fontSize: 12, color: '#5c7a76', lineHeight: 1.5 }}>
+              <span style={{ display: 'block' }}>Date: <strong style={{ color: '#0e3b39' }}>{receipt.dateLabel}</strong></span>
+              <span style={{ display: 'block', fontFamily: 'ui-monospace,monospace' }}>{receipt.receiptNo}</span>
+            </span>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: '8px 22px', marginTop: 14, fontSize: 13.5 }}>
+            <span style={{ color: '#5c7a76' }}>Received from: <strong style={{ color: '#0e3b39' }}>{receipt.name}</strong></span>
+            <span style={{ color: '#5c7a76' }}>Mobile: <strong style={{ color: '#0e3b39' }}>{receipt.mobile}</strong></span>
+            <span style={{ color: '#5c7a76' }}>Patient ID: <strong style={{ color: '#0e3b39' }}>{receipt.patientId}</strong></span>
+            <span style={{ color: '#5c7a76' }}>Mode: <strong style={{ color: '#0e3b39' }}>{receipt.mode}</strong></span>
+          </div>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5, marginTop: 18 }}>
+            <thead><tr style={{ textAlign: 'left', color: '#7a9994', fontSize: 11, letterSpacing: '.05em', textTransform: 'uppercase', borderBottom: '1px solid #e2efec' }}>
+              <th style={{ padding: '8px 6px', fontWeight: 700 }}>#</th><th style={{ padding: '8px 6px', fontWeight: 700 }}>Particulars</th><th style={{ padding: '8px 6px', fontWeight: 700, textAlign: 'right' }}>Amount</th>
+            </tr></thead>
+            <tbody>
+              {receipt.lines.map((rl) => (
+                <tr key={rl.sn} style={{ borderBottom: '1px solid #f0f6f5' }}>
+                  <td style={{ padding: '10px 6px', color: '#8aa8a3' }}>{rl.sn}</td>
+                  <td style={{ padding: '10px 6px', color: '#0e3b39' }}>{rl.label}</td>
+                  <td style={{ padding: '10px 6px', color: '#33534f', textAlign: 'right' }}>{rl.amountLabel}</td>
+                </tr>
+              ))}
+              <tr>
+                <td style={{ padding: '12px 6px' }}></td>
+                <td style={{ padding: '12px 6px', fontWeight: 700, color: '#0e3b39' }}>Total received</td>
+                <td style={{ padding: '12px 6px', textAlign: 'right', fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: 18, color: '#12805a' }}>{receipt.totalLabel}</td>
+              </tr>
+            </tbody>
+          </table>
+          <div style={{ marginTop: 6, padding: '13px 15px', borderRadius: 12, background: '#f7fbfa', border: '1px solid #e2efec', display: 'flex', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap', fontSize: 13.5 }}>
+            <span style={{ color: '#5c7a76' }}>Payment status: <strong style={{ color: '#0e3b39' }}>{receipt.status}</strong></span>
+            <span style={{ color: '#5c7a76' }}>Balance due: <strong style={{ color: receipt.balanceColor }}>{receipt.balanceLabel}</strong></span>
+          </div>
+          <div style={{ marginTop: 30, display: 'flex', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+            <span style={{ fontSize: 11.5, color: '#98b0ab', maxWidth: 230 }}>This is a computer-generated receipt for the amount received.</span>
+            <span style={{ textAlign: 'center', fontSize: 12.5, color: '#5c7a76', borderTop: '1px solid #cfe3df', paddingTop: 7, minWidth: 180 }}>For {clinicName}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function PatientDetail({ patient, patientId, onGoBack, clinicName, clinicAddress }) {
   const [detailVisit, setDetailVisit] = useState(null);
+  const [viewDoc, setViewDoc] = useState(null);
 
   if (!patient) return null;
+
+  const cn = clinicName || 'Surmayee Dental Studio';
+  const ca = clinicAddress || 'Shop No. 7, 1st Floor, SVG Galleria, Sector 131, Noida · +91 82527 04246';
 
   const p = patient;
   const sorted = p.visits.slice().sort((a, b) => (a.no || 0) - (b.no || 0));
@@ -76,20 +232,33 @@ export default function PatientDetail({ patient, patientId, onGoBack }) {
   const ageGender = (p.age || '?') + '/' + (p.gender || '—');
 
   const visitCards = sorted.slice().reverse().map((v) => {
-    const c = v.clinical || {};
-    const tr = /Other/.test(c.treatment) && c.treatmentOther ? c.treatmentOther : (c.treatment || '—');
-    const cost = num(c.treatmentCost);
-    const balance = num(c.balanceDue);
-    const ps = c.paymentStatus || '—';
+    const nc = normalizeClinical(v.clinical || {});
+    const tr = trLabel(nc) || '—';
+    const cost = num(nc.treatmentCost);
+    const balance = num(nc.balanceDue);
+    const ps = nc.paymentStatus || '—';
     const [vBg, vInk] = PAY_MAP[ps] || ['#eef4f3', '#8aa8a3'];
-    return { visitId: v.visitId, dateLabel: fmtDate(v.date), treatmentLabel: tr, costLabel: cost ? inr(cost) : '—', balanceLabel: balance ? inr(balance) : '—', status: ps, stBg: vBg, stInk: vInk, visit: v };
+    const hasMeds = (nc.medicines || []).some(m => m.name);
+    const hasPaid = num(nc.amountPaid) > 0;
+    return { visitId: v.visitId, dateLabel: fmtDate(v.date), treatmentLabel: tr, costLabel: cost ? inr(cost) : '—', balanceLabel: balance ? inr(balance) : '—', status: ps, stBg: vBg, stInk: vInk, visit: v, hasMeds, hasPaid, nc };
   });
+
+  function openRx(vc) {
+    const meta = { dateLabel: vc.dateLabel, name: p.name, ageGender: (p.age || '?') + ' yrs · ' + (p.gender || '—'), mobile: p.mobile, patientId, visitId: vc.visitId };
+    setViewDoc({ kind: 'rx', data: buildRx(vc.nc, meta) });
+  }
+  function openReceipt(vc) {
+    const meta = { dateLabel: vc.dateLabel, name: p.name, mobile: p.mobile, patientId, visitId: vc.visitId };
+    setViewDoc({ kind: 'receipt', data: buildReceipt(vc.nc, meta) });
+  }
+
+  const detail = detailVisit ? buildDetailRows(detailVisit, p) : null;
 
   return (
     <div style={{ maxWidth: 840, margin: '0 auto' }}>
       <button onClick={onGoBack}
         style={{ border: 0, background: 'none', color: '#0e756c', fontWeight: 700, fontSize: 14, cursor: 'pointer', padding: 0, marginBottom: 12 }}>
-        ← Back to patients
+        &larr; Back to patients
       </button>
 
       <div style={{
@@ -145,21 +314,38 @@ export default function PatientDetail({ patient, patientId, onGoBack }) {
         {visitCards.length > 0 ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {visitCards.map((vc) => (
-              <button key={vc.visitId} onClick={() => setDetailVisit(vc.visit)}
-                style={{
-                  textAlign: 'left', border: '1px solid #eef4f3', borderRadius: 12,
-                  background: '#fff', padding: '13px 15px', cursor: 'pointer',
-                  display: 'flex', flexDirection: 'column', gap: 6, width: '100%',
-                }}>
-                <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-                  <span style={{ fontFamily: 'ui-monospace,monospace', fontSize: 12, color: '#0e756c', fontWeight: 700 }}>{vc.visitId}</span>
-                  <span style={{ display: 'inline-block', padding: '3px 10px', borderRadius: 100, fontSize: 11.5, fontWeight: 700, background: vc.stBg, color: vc.stInk }}>{vc.status}</span>
-                </span>
-                <span style={{ fontSize: 14, color: '#33534f' }}>{vc.treatmentLabel}</span>
-                <span style={{ display: 'flex', flexWrap: 'wrap', columnGap: 14, fontSize: 12.5, color: '#5c7a76' }}>
-                  {vc.dateLabel} · Cost {vc.costLabel} · Balance {vc.balanceLabel}
-                </span>
-              </button>
+              <div key={vc.visitId} style={{ border: '1px solid #eef4f3', borderRadius: 12, background: '#fff', overflow: 'hidden' }}>
+                <button onClick={() => setDetailVisit(vc.visit)}
+                  style={{
+                    textAlign: 'left', border: 0, borderRadius: 0, background: 'transparent',
+                    padding: '13px 15px', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 6, width: '100%',
+                  }}>
+                  <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, width: '100%' }}>
+                    <span style={{ fontFamily: 'ui-monospace,monospace', fontSize: 12, color: '#0e756c', fontWeight: 700 }}>{vc.visitId}</span>
+                    <span style={{ display: 'inline-block', padding: '3px 10px', borderRadius: 100, fontSize: 11.5, fontWeight: 700, background: vc.stBg, color: vc.stInk }}>{vc.status}</span>
+                  </span>
+                  <span style={{ fontSize: 14, color: '#33534f' }}>{vc.treatmentLabel}</span>
+                  <span style={{ display: 'flex', flexWrap: 'wrap', columnGap: 14, fontSize: 12.5, color: '#5c7a76' }}>
+                    {vc.dateLabel} · Cost {vc.costLabel} · Balance {vc.balanceLabel}
+                  </span>
+                </button>
+                {(vc.hasMeds || vc.hasPaid) && (
+                  <div style={{ borderTop: '1px solid #eef4f3', padding: '8px 15px', display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                    {vc.hasMeds && (
+                      <button onClick={() => openRx(vc)} style={{ padding: '7px 14px', borderRadius: 9, border: '1px solid #cfe3df', background: '#f2f9f8', color: '#0e756c', fontWeight: 700, fontSize: 12.5, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7z"/><path d="M14 2v5h5M9 13h6M9 17h4"/></svg>
+                        Prescription
+                      </button>
+                    )}
+                    {vc.hasPaid && (
+                      <button onClick={() => openReceipt(vc)} style={{ padding: '7px 14px', borderRadius: 9, border: '1px solid #cfe3df', background: '#f2f9f8', color: '#0e756c', fontWeight: 700, fontSize: 12.5, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 2h12v20l-3-2-3 2-3-2-3 2V2z"/><path d="M9 8h6M9 12h6"/></svg>
+                        Payment receipt
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
             ))}
           </div>
         ) : (
@@ -167,7 +353,7 @@ export default function PatientDetail({ patient, patientId, onGoBack }) {
         )}
       </div>
 
-      {detailVisit && (
+      {detailVisit && detail && (
         <div onClick={() => setDetailVisit(null)}
           style={{
             position: 'fixed', inset: 0, zIndex: 80, background: 'rgba(14,59,57,.55)',
@@ -190,16 +376,37 @@ export default function PatientDetail({ patient, patientId, onGoBack }) {
               </button>
             </div>
             <div style={{ padding: '8px 22px 22px' }}>
-              {buildDetailRows(detailVisit).map((r, i) => (
+              {detail.rows.map((r, i) => (
                 <div key={i} style={{ display: 'flex', justifyContent: 'space-between', gap: 16, padding: '11px 0', borderBottom: '1px solid #f0f6f5' }}>
                   <span style={{ fontSize: 13, fontWeight: 700, color: '#8aa8a3', flex: '0 0 auto' }}>{r.k}</span>
                   <span style={{ fontSize: 14, color: '#33534f', textAlign: 'right' }}>{r.v}</span>
                 </div>
               ))}
+              {detail.hasDocs && (
+                <div style={{ marginTop: 14 }}>
+                  <span style={{ display: 'block', fontSize: 12, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: '#8aa8a3', marginBottom: 8 }}>Documents</span>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(120px,1fr))', gap: 10 }}>
+                    {detail.docs.map((d, i) => (
+                      <a key={i} href={d.dataUrl} target="_blank" rel="noopener noreferrer" style={{ border: '1px solid #e2efec', borderRadius: 11, overflow: 'hidden', background: '#fbfdfd', display: 'block' }}>
+                        <span style={{ display: 'block', height: 76, background: '#eef4f3', overflow: 'hidden' }}>
+                          {/^image/i.test(d.type) ? <img src={d.dataUrl} alt={d.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8aa8a3', fontSize: 12, fontWeight: 700 }}>PDF</span>}
+                        </span>
+                        <span style={{ display: 'block', padding: '7px 9px' }}>
+                          <span style={{ display: 'block', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: '#0e756c' }}>{d.kind}</span>
+                          <span style={{ display: 'block', fontSize: 12, color: '#5c7a76', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.name}</span>
+                        </span>
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
       )}
+
+      {viewDoc && viewDoc.kind === 'rx' && <PrescriptionSheet rx={viewDoc.data} onClose={() => setViewDoc(null)} clinicName={cn} clinicAddress={ca} />}
+      {viewDoc && viewDoc.kind === 'receipt' && <ReceiptSheet receipt={viewDoc.data} onClose={() => setViewDoc(null)} clinicName={cn} clinicAddress={ca} />}
     </div>
   );
 }

@@ -44,12 +44,23 @@ function fmtTime(t) {
 }
 function blankClinical() {
   return {
-    patientType: '', medicalHistory: '', chiefComplaint: '', chiefDescription: '', treatmentGroup: '', treatment: '', advisedTreatment: '', toothNumber: '', treatmentOther: '', advisedTreatmentOther: '',
-    treatmentCost: '', amountPaid: '', balanceDue: '', paymentMode: '',
-    treatmentStage: '', googleReviewTaken: '', nextAppointment: '', nextAppointmentTime: '', comments: '',
+    chiefComplaint: [], chiefDescription: '', patientProblem: '', medicalHistory: '',
+    toothNumber: [], treatmentGroup: [], treatment: [], treatmentOther: '',
+    advisedTreatment: [], medicines: [], documents: [], paySplits: [],
     labName: '', labToothNumber: '', labDescription: '',
-    patientProblem: '',
+    treatmentCost: '', amountPaid: '', balanceDue: '', paymentMode: '', paymentStatus: '',
+    treatmentStage: '', googleReviewTaken: '', nextAppointment: '', nextAppointmentTime: '', comments: '',
   };
+}
+function normalizeClinical(c) {
+  const out = { ...blankClinical(), ...c };
+  ['chiefComplaint', 'treatmentGroup', 'treatment', 'advisedTreatment', 'toothNumber'].forEach(k => {
+    out[k] = Array.isArray(out[k]) ? out[k] : (out[k] ? [out[k]] : []);
+  });
+  out.medicines = Array.isArray(out.medicines) ? out.medicines : [];
+  out.paySplits = Array.isArray(out.paySplits) ? out.paySplits : [];
+  out.documents = Array.isArray(out.documents) ? out.documents : [];
+  return out;
 }
 function findAllByMobile(db, mobile) {
   const mm = normMobile(mobile);
@@ -226,8 +237,7 @@ export default function App({ user, onLogout }) {
     setDbState(optDb);
     setCurPatientId(pid);
     setCurVisitId(optVid);
-    const autoType = Number(p.age) <= 12 ? 'Kid' : 'Adult';
-    setCform({ ...blankClinical(), patientType: autoType });
+    setCform(blankClinical());
     setSavedFlash(false);
     setClinicalError('');
     setClinicalReadOnly(false);
@@ -308,10 +318,10 @@ export default function App({ user, onLogout }) {
 
   function openVisit(pid, visitId, readOnly) {
     const p = db.patients[pid];
-    const v = p && p.visits.find((x) => x.visitId === visitId);
     setCurPatientId(pid);
     setCurVisitId(visitId);
-    const base = v && v.clinical ? { ...blankClinical(), ...v.clinical } : blankClinical();
+    const v = p && p.visits.find((x) => x.visitId === visitId);
+    const base = v && v.clinical ? normalizeClinical(v.clinical) : blankClinical();
     if (!base.patientType && p) {
       base.patientType = Number(p.age) <= 12 ? 'Kid' : 'Adult';
     }
@@ -335,14 +345,36 @@ export default function App({ user, onLogout }) {
     pushView('intake');
   }
 
+  async function onSaveAndNext() {
+    setSavingClinical(true);
+    setClinicalError('');
+    try {
+      const saveForm = { ...cform };
+      if (!saveForm.labToothNumber && saveForm.toothNumber && (saveForm.labName || saveForm.labDescription)) {
+        saveForm.labToothNumber = Array.isArray(saveForm.toothNumber) ? saveForm.toothNumber.join(', ') : saveForm.toothNumber;
+      }
+      const remaining = num(saveForm.treatmentCost) + prevPending - num(saveForm.amountPaid);
+      saveForm.paymentStatus = remaining <= 0 ? 'Fully Paid' : (num(saveForm.amountPaid) > 0 ? 'Partially paid' : 'Not paid');
+      saveForm.balanceDue = String(Math.max(0, remaining));
+      await saveClinical({ patientId: curPatientId, visitId: curVisitId, cform: saveForm });
+    } catch {
+      setClinicalError('Auto-save failed — your data is still in the form.');
+    } finally {
+      setSavingClinical(false);
+    }
+  }
+
   async function onSaveClinical() {
     setSavingClinical(true);
     setClinicalError('');
     try {
       const saveForm = { ...cform };
       if (!saveForm.labToothNumber && saveForm.toothNumber && (saveForm.labName || saveForm.labDescription)) {
-        saveForm.labToothNumber = saveForm.toothNumber;
+        saveForm.labToothNumber = Array.isArray(saveForm.toothNumber) ? saveForm.toothNumber.join(', ') : saveForm.toothNumber;
       }
+      const remaining = num(saveForm.treatmentCost) + prevPending - num(saveForm.amountPaid);
+      saveForm.paymentStatus = remaining <= 0 ? 'Fully Paid' : (num(saveForm.amountPaid) > 0 ? 'Partially paid' : 'Not paid');
+      saveForm.balanceDue = String(Math.max(0, remaining));
       const res = await saveClinical({ patientId: curPatientId, visitId: curVisitId, cform: saveForm });
       applySnapshot(res);
       setSavedFlash(true);
@@ -414,7 +446,9 @@ export default function App({ user, onLogout }) {
     const p = db.patients[pid];
     for (const v of p.visits) {
       const ps = (v.clinical && v.clinical.paymentStatus) || '';
-      const tr = v.clinical ? (/Other/.test(v.clinical.treatment) && v.clinical.treatmentOther ? v.clinical.treatmentOther : v.clinical.treatment) : '';
+      const rawTr = v.clinical ? (Array.isArray(v.clinical.treatment) ? v.clinical.treatment : (v.clinical.treatment ? [v.clinical.treatment] : [])) : [];
+      const hasOther = rawTr.some(t => /Other/.test(t));
+      const tr = hasOther && v.clinical.treatmentOther ? [...rawTr.filter(t => !/Other/.test(t)), v.clinical.treatmentOther].join(', ') : rawTr.join(', ');
       const payMap = { 'Fully Paid': ['#e3f5ec', '#12805a'], 'Partially paid': ['#fdf0dc', '#a9741a'], 'Not paid': ['#fdecea', '#c0392b'] };
       const pm = payMap[ps] || ['#eef4f3', '#8aa8a3'];
       rows.push({
@@ -462,7 +496,9 @@ export default function App({ user, onLogout }) {
       if (!na) continue;
       apptDatesMap[na] = (apptDatesMap[na] || 0) + 1;
       if (na === apptDate) {
-        const trr = v.clinical ? (/Other/.test(v.clinical.treatment) && v.clinical.treatmentOther ? v.clinical.treatmentOther : v.clinical.treatment) : '';
+        const rawTrr = v.clinical ? (Array.isArray(v.clinical.treatment) ? v.clinical.treatment : (v.clinical.treatment ? [v.clinical.treatment] : [])) : [];
+        const hasOtherA = rawTrr.some(t => /Other/.test(t));
+        const trr = hasOtherA && v.clinical.treatmentOther ? [...rawTrr.filter(t => !/Other/.test(t)), v.clinical.treatmentOther].join(', ') : rawTrr.join(', ');
         const nat = (v.clinical && v.clinical.nextAppointmentTime) || '';
         appts.push({
           date: na, time: nat, timeLabel: fmtTime(nat), name: p.name, mobile: p.mobile,
@@ -557,13 +593,15 @@ export default function App({ user, onLogout }) {
       const cost = isCur ? num(cform.treatmentCost) : num(v.clinical && v.clinical.treatmentCost);
       const paid = isCur ? num(cform.amountPaid) : num(v.clinical && v.clinical.amountPaid);
       const visitOwes = cost - paid;
-      const trr = v.clinical ? (/Other/.test(v.clinical.treatment) && v.clinical.treatmentOther ? v.clinical.treatmentOther : v.clinical.treatment) : '';
+      const rawTrH = v.clinical ? (Array.isArray(v.clinical.treatment) ? v.clinical.treatment : (v.clinical.treatment ? [v.clinical.treatment] : [])) : [];
+      const hasOtherH = rawTrH.some(t => /Other/.test(t));
+      const trrH = hasOtherH && v.clinical && v.clinical.treatmentOther ? [...rawTrH.filter(t => !/Other/.test(t)), v.clinical.treatmentOther].join(', ') : rawTrH.join(', ');
       if (i > lastReset && visitOwes > 0) {
         rawPending.push({ visitId: v.visitId, dateLabel: fmtDate(v.date), rawAmount: visitOwes, current: isCur });
       }
       const bal = num(v.clinical && v.clinical.balanceDue);
       history.push({
-        visitId: v.visitId, dateLabel: fmtDate(v.date), treatmentLabel: trr || '—',
+        visitId: v.visitId, dateLabel: fmtDate(v.date), treatmentLabel: trrH || '—',
         cost: cost ? inr(cost) : '—', balance: bal ? inr(bal) : '—',
         status: (v.clinical && v.clinical.paymentStatus) || '—', current: isCur, rowBg: isCur ? '#eef7f6' : '#fff',
       });
@@ -669,8 +707,6 @@ export default function App({ user, onLogout }) {
           <Clinical
             cur={cur} hasHistory={history.length > 0}
             cform={cform} onSetField={(k, v) => setCform((f) => ({ ...f, [k]: v }))}
-            showTreatmentOther={/Other/.test(cform.treatment)}
-            showAdvisedTreatmentOther={/Other/.test(cform.advisedTreatment)}
             prevPending={prevPending} prevPendingLabel={inr(prevPending)}
             amountToCollect={num(cform.treatmentCost) + prevPending}
             amountToCollectLabel={inr(num(cform.treatmentCost) + prevPending)}
@@ -682,7 +718,7 @@ export default function App({ user, onLogout }) {
             hasQr={!!db.upiQr} noQr={!db.upiQr} qrUrl={db.upiQr}
             qrUploadLabel={db.upiQr ? 'Replace scanner' : 'Upload scanner'} onUploadQr={onUploadQr}
             showQr={showQr} onOpenQr={() => setShowQr(true)} onCloseQr={() => setShowQr(false)}
-            savedFlash={savedFlash} onGoBack={goBack} onSaveClinical={onSaveClinical} saving={savingClinical}
+            savedFlash={savedFlash} onGoBack={goBack} onSaveClinical={onSaveClinical} onSaveAndNext={onSaveAndNext} saving={savingClinical}
             error={clinicalError}
             apptCountText={apptCountText} showApptCount={!!cform.nextAppointment}
             db={db} curPatientId={curPatientId}
