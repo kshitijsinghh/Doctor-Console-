@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { fetchList, portalCheckin, savePatientProblem } from './api';
+import { fetchList, portalCheckin, savePatientProblem, getDocumentUrl } from './api';
 import { getFirebaseAuth, RecaptchaVerifier, signInWithPhoneNumber, signOut as firebaseSignOut } from './firebase';
 
 /* ─── helpers ─── */
@@ -48,6 +48,72 @@ function complaintLabel(c) {
   return cc;
 }
 
+function asList(x) { return Array.isArray(x) ? x : (x ? [x] : []); }
+function listLabel(x, fallback) { const a = asList(x); return a.length ? a.join(', ') : (fallback || ''); }
+function trLabel(c) {
+  if (!c) return '';
+  return asList(c.treatment).map(t => (/Other/.test(t) && c.treatmentOther) ? c.treatmentOther : t).join(', ');
+}
+function medDoseText(m) {
+  const parts = [];
+  if (m.morning) parts.push('1 Morning');
+  if (m.afternoon) parts.push('1 Afternoon');
+  if (m.evening) parts.push('1 Evening');
+  if (m.night) parts.push('1 Night');
+  return parts.length ? parts.join(', ') : '—';
+}
+function medTotal(m) {
+  const per = (m.morning ? 1 : 0) + (m.afternoon ? 1 : 0) + (m.evening ? 1 : 0) + (m.night ? 1 : 0);
+  const d = parseFloat(m.duration);
+  if (!per || isNaN(d) || d <= 0) return '';
+  return '(Tot: ' + (per * d) + ' ' + (m.unit || '') + ')';
+}
+function splitLabel(sp) { return sp.category === 'Custom' ? (sp.custom || 'Custom') : sp.category; }
+function buildRx(cf, meta, clinicName) {
+  return {
+    dateLabel: meta.dateLabel, name: meta.name, ageGender: meta.ageGender, mobile: meta.mobile,
+    patientId: meta.patientId, visitId: meta.visitId,
+    medicalHistory: cf.medicalHistory || '—',
+    chiefComplaint: listLabel(cf.chiefComplaint, '—'),
+    description: cf.chiefDescription || '—',
+    treatmentGroup: listLabel(cf.treatmentGroup, '—'),
+    treatment: trLabel(cf) || '—',
+    advisedTreatment: listLabel(cf.advisedTreatment, '—'),
+    toothNumber: listLabel(cf.toothNumber, '—'),
+    meds: (cf.medicines || []).filter(m => m.name).map((m, i) => ({
+      sn: i + 1, name: m.name, unit: m.unit, dose: medDoseText(m),
+      food: m.food, duration: m.duration ? (m.duration + ' days') : '—', total: medTotal(m),
+    })),
+    hasMeds: (cf.medicines || []).some(m => m.name),
+    noMeds: !(cf.medicines || []).some(m => m.name),
+    clinicName: clinicName || 'PatientPad',
+  };
+}
+function buildReceipt(cf, meta) {
+  const splits = (cf.paySplits || []).filter(sp => splitLabel(sp) && num(sp.amount) > 0);
+  let lines = [];
+  if (splits.length) lines = splits.map(sp => ({ label: splitLabel(sp), amount: num(sp.amount) }));
+  else {
+    const fb = trLabel(cf) || listLabel(cf.treatmentGroup, '');
+    if (fb) lines = [{ label: fb, amount: num(cf.amountPaid) }];
+  }
+  const total = lines.reduce((s, l) => s + l.amount, 0);
+  const bal = num(cf.balanceDue);
+  return {
+    lines: lines.map((l, i) => ({ sn: i + 1, label: l.label, amountLabel: inr(l.amount) })),
+    totalLabel: inr(total), paidLabel: inr(num(cf.amountPaid)),
+    balanceLabel: inr(bal), balanceColor: bal > 0 ? '#c0392b' : '#12805a',
+    mode: cf.paymentMode || '—', status: cf.paymentStatus || '—',
+    receiptNo: 'R-' + (meta.visitId || ''), dateLabel: meta.dateLabel,
+    name: meta.name, mobile: meta.mobile, patientId: meta.patientId,
+  };
+}
+function fileTypeLabel(type) {
+  if (/^image\//.test(type || '')) return 'Image';
+  if (/pdf/i.test(type || '')) return 'PDF';
+  return 'File';
+}
+
 const SESSION_KEY = 'patient_session';
 const GENDERS = ['Male', 'Female', 'Other'];
 const CLINIC_NAME = 'PatientPad';
@@ -92,6 +158,24 @@ const GoogleLogo = () => (
 );
 const PhoneIcon = () => (
   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="1" width="14" height="22" rx="3"/><path d="M12 18h.01"/></svg>
+);
+const RxIcon = () => (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7z"/><path d="M14 2v5h5M9 13h6M9 17h4"/></svg>
+);
+const ReceiptIcon = () => (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 2h12v20l-3-2-3 2-3-2-3 2V2z"/><path d="M9 8h6M9 12h6"/></svg>
+);
+const FolderIcon = () => (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 6a2 2 0 0 1 2-2h3l2 2h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/></svg>
+);
+const EyeIcon = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/></svg>
+);
+const DocFileIcon = () => (
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#8aa8a3" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7z"/><path d="M14 2v5h5"/></svg>
+);
+const ChevronRight = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#98b0ab" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M9 6l6 6-6 6"/></svg>
 );
 
 /* ═══════════════════════════════════════════
@@ -172,6 +256,10 @@ export default function PortalApp() {
 
   /* ── member sheet ── */
   const [memberSheet, setMemberSheet] = useState(false);
+
+  /* ── document sheets + files popup ── */
+  const [viewDoc, setViewDoc] = useState(null);
+  const [filesVisit, setFilesVisit] = useState(null);
 
   /* ─── helpers for state ─── */
   function applySnapshot(res) {
@@ -779,12 +867,21 @@ export default function PortalApp() {
       .map(v => {
         const c = v.clinical || {};
         const cols = payMap[c.paymentStatus] || ['#eef4f3', '#8aa8a3'];
+        const bal = num(c.balanceDue);
+        const docs = (c.documents || []);
+        const hasRx = !!(v.done && (c.medicines || []).some(m => m.name));
+        const hasReceipt = !!(v.done && num(c.amountPaid) > 0);
+        const hasFiles = docs.length > 0;
         return {
           visitId: v.visitId, dateLabel: fmtDate(v.date),
           treatmentLbl: treatmentLabel(c) || (v.done ? '—' : 'Awaiting consultation'),
           status: v.done ? (c.paymentStatus || 'Completed') : (v.date === today ? 'In progress' : 'Awaiting doctor'),
           stBg: v.done ? cols[0] : '#fdf0dc', stInk: v.done ? cols[1] : '#a9741a',
-          balanceLabel: inr(num(c.balanceDue)),
+          costLabel: v.done ? inr(num(c.treatmentCost)) : '',
+          balanceLabel: inr(bal),
+          showCharges: !!v.done, pendingVisit: !v.done, hasBalance: !!v.done && bal > 0,
+          hasRx, hasReceipt, hasFiles, filesCount: docs.length,
+          hasAnyDoc: hasRx || hasReceipt || hasFiles,
         };
       });
   }
@@ -811,22 +908,25 @@ export default function PortalApp() {
       .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : (b.no || 0) - (a.no || 0)))
       .map(v => {
         const c = v.clinical || {};
-        const parts = dateParts(v.date);
         const cols = payMap[c.paymentStatus] || ['#eef4f3', '#8aa8a3'];
         const bal = num(c.balanceDue);
+        const docs = (c.documents || []);
+        const hasRx = !!(v.done && (c.medicines || []).some(m => m.name));
+        const hasReceipt = !!(v.done && num(c.amountPaid) > 0);
+        const hasFiles = docs.length > 0;
         return {
           visitId: v.visitId, date: v.date,
-          day: parts.day, mon: parts.mon, yr: parts.yr,
           treatmentLbl: treatmentLabel(c) || (v.done ? '—' : 'Awaiting consultation'),
-          complaintLbl: complaintLabel(c) || '—',
           status: v.done ? (c.paymentStatus || 'Completed') : (v.date === today ? 'In progress' : 'Awaiting doctor'),
           stBg: v.done ? cols[0] : '#fdf0dc', stInk: v.done ? cols[1] : '#a9741a',
-          costLabel: num(c.treatmentCost) ? inr(num(c.treatmentCost)) : '—',
+          costLabel: v.done ? inr(num(c.treatmentCost)) : '',
           balanceLabel: inr(bal),
-          hasBalance: bal > 0,
-          showCharges: v.done,
+          hasBalance: !!v.done && bal > 0,
+          showCharges: !!v.done,
           pendingVisit: !v.done,
           done: v.done,
+          hasRx, hasReceipt, hasFiles, filesCount: docs.length,
+          hasAnyDoc: hasRx || hasReceipt || hasFiles,
         };
       });
   }
@@ -1375,20 +1475,43 @@ export default function PortalApp() {
                   <p style={{ fontSize: '12.5px', color: '#98b0ab', marginBottom: 10 }}>Tap a visit to see full details.</p>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     {pastVisits.slice(0, 3).map(v => (
-                      <button key={v.visitId} onClick={() => setDetailVisitId(v.visitId)} style={{
-                        textAlign: 'left', border: '1px solid #dfece9', borderRadius: 14, background: '#fff',
-                        padding: '14px 15px', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 6,
-                      }}>
-                        <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-                          <span style={{ fontSize: 13, fontWeight: 700, color: '#0e3b39' }}>{v.dateLabel}</span>
-                          <span style={{ padding: '3px 10px', borderRadius: 100, fontSize: 11, fontWeight: 700, background: v.stBg, color: v.stInk }}>{v.status}</span>
-                        </span>
-                        <span style={{ fontSize: 14, color: '#33534f' }}>{v.treatmentLbl}</span>
-                        <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, fontSize: '12.5px', color: '#98b0ab' }}>
-                          <span><span style={{ fontFamily: 'ui-monospace,monospace', color: '#0e756c', fontWeight: 600 }}>{v.visitId}</span> &middot; Balance {v.balanceLabel}</span>
-                          <span style={{ color: '#0e756c', fontWeight: 700 }}>View &rarr;</span>
-                        </span>
-                      </button>
+                      <div key={v.visitId} style={{ border: '1px solid #dfece9', borderRadius: 16, background: '#fff', padding: 14 }}>
+                        <div onClick={() => setDetailVisitId(v.visitId)} style={{ cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                            <span style={{ fontFamily: 'ui-monospace,monospace', fontSize: 12, color: '#0e756c', fontWeight: 700 }}>{v.visitId}</span>
+                            <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <span style={{ flexShrink: 0, padding: '3px 10px', borderRadius: 100, fontSize: '11.5px', fontWeight: 700, background: v.stBg, color: v.stInk }}>{v.status}</span>
+                              <ChevronRight />
+                            </span>
+                          </div>
+                          <span style={{ fontSize: 15, fontWeight: 600, color: '#0e3b39' }}>{v.treatmentLbl}</span>
+                          <span style={{ fontSize: '12.5px', color: '#5c7a76' }}>
+                            {v.dateLabel}
+                            {v.showCharges && <span> &middot; Cost {v.costLabel}</span>}
+                            {v.pendingVisit && <span style={{ fontStyle: 'italic' }}> &middot; Not billed yet</span>}
+                            {v.hasBalance && <span style={{ color: '#c0392b', fontWeight: 700 }}> &middot; Due {v.balanceLabel}</span>}
+                          </span>
+                        </div>
+                        {v.hasAnyDoc && (
+                          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 11, paddingTop: 11, borderTop: '1px solid #f0f6f5' }}>
+                            {v.hasRx && (
+                              <button onClick={(e) => { e.stopPropagation(); setViewDoc({ visitId: v.visitId, kind: 'rx' }); }} style={{ padding: '8px 13px', borderRadius: 9, border: '1px solid #cfe3df', background: '#f2f9f8', color: '#0e756c', fontWeight: 700, fontSize: '12.5px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                                <RxIcon /> Prescription
+                              </button>
+                            )}
+                            {v.hasReceipt && (
+                              <button onClick={(e) => { e.stopPropagation(); setViewDoc({ visitId: v.visitId, kind: 'receipt' }); }} style={{ padding: '8px 13px', borderRadius: 9, border: '1px solid #cfe3df', background: '#f2f9f8', color: '#0e756c', fontWeight: 700, fontSize: '12.5px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                                <ReceiptIcon /> Payment receipt
+                              </button>
+                            )}
+                            {v.hasFiles && (
+                              <button onClick={(e) => { e.stopPropagation(); setFilesVisit(v.visitId); }} style={{ padding: '8px 13px', borderRadius: 9, border: '1px solid #cfe3df', background: '#f2f9f8', color: '#0e756c', fontWeight: 700, fontSize: '12.5px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                                <FolderIcon /> Documents ({v.filesCount})
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     ))}
                   </div>
                 </div>
@@ -1441,31 +1564,43 @@ export default function PortalApp() {
                   <p style={{ fontSize: '12.5px', color: '#98b0ab', marginBottom: 10 }}>Newest first &middot; tap any visit for full details.</p>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                     {allVisits.map(v => (
-                      <button key={v.visitId} onClick={() => setDetailVisitId(v.visitId)} style={{
-                        textAlign: 'left', border: '1px solid #dfece9', borderRadius: 16, background: '#fff',
-                        padding: 14, cursor: 'pointer', display: 'flex', gap: 13, alignItems: 'flex-start',
-                      }}>
-                        <span style={{ flex: '0 0 auto', width: 52, borderRadius: 12, background: '#e6f4f2', padding: '8px 0', textAlign: 'center', lineHeight: 1.1 }}>
-                          <span style={{ display: 'block', fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: 19, color: '#0e756c' }}>{v.day}</span>
-                          <span style={{ display: 'block', fontSize: 10, fontWeight: 700, letterSpacing: '.08em', color: '#0e756c' }}>{v.mon}</span>
-                          <span style={{ display: 'block', fontSize: '9.5px', color: '#8aa8a3' }}>{v.yr}</span>
-                        </span>
-                        <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 5 }}>
-                          <span style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
-                            <span style={{ fontWeight: 700, color: '#0e3b39', fontSize: 15 }}>{v.treatmentLbl}</span>
-                            <span style={{ flexShrink: 0, padding: '3px 9px', borderRadius: 100, fontSize: '10.5px', fontWeight: 700, background: v.stBg, color: v.stInk }}>{v.status}</span>
-                          </span>
-                          <span style={{ fontSize: '12.5px', color: '#5c7a76' }}>{v.complaintLbl}</span>
-                          <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, fontSize: 12, color: '#98b0ab' }}>
-                            <span>
-                              {v.showCharges && <span>Charges {v.costLabel}</span>}
-                              {v.pendingVisit && <span style={{ fontStyle: 'italic' }}>Not billed yet</span>}
-                              {v.hasBalance && <span style={{ color: '#c0392b', fontWeight: 700 }}> &middot; Due {v.balanceLabel}</span>}
+                      <div key={v.visitId} style={{ border: '1px solid #dfece9', borderRadius: 16, background: '#fff', padding: 14 }}>
+                        <div onClick={() => setDetailVisitId(v.visitId)} style={{ cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                            <span style={{ fontFamily: 'ui-monospace,monospace', fontSize: 12, color: '#0e756c', fontWeight: 700 }}>{v.visitId}</span>
+                            <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <span style={{ flexShrink: 0, padding: '3px 10px', borderRadius: 100, fontSize: '11.5px', fontWeight: 700, background: v.stBg, color: v.stInk }}>{v.status}</span>
+                              <ChevronRight />
                             </span>
-                            <span style={{ color: '#0e756c', fontWeight: 700 }}>View &rarr;</span>
+                          </div>
+                          <span style={{ fontSize: 15, fontWeight: 600, color: '#0e3b39' }}>{v.treatmentLbl}</span>
+                          <span style={{ fontSize: '12.5px', color: '#5c7a76' }}>
+                            {fmtDate(v.date)}
+                            {v.showCharges && <span> &middot; Cost {v.costLabel}</span>}
+                            {v.pendingVisit && <span style={{ fontStyle: 'italic' }}> &middot; Not billed yet</span>}
+                            {v.hasBalance && <span style={{ color: '#c0392b', fontWeight: 700 }}> &middot; Due {v.balanceLabel}</span>}
                           </span>
-                        </span>
-                      </button>
+                        </div>
+                        {v.hasAnyDoc && (
+                          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 11, paddingTop: 11, borderTop: '1px solid #f0f6f5' }}>
+                            {v.hasRx && (
+                              <button onClick={(e) => { e.stopPropagation(); setViewDoc({ visitId: v.visitId, kind: 'rx' }); }} style={{ padding: '8px 13px', borderRadius: 9, border: '1px solid #cfe3df', background: '#f2f9f8', color: '#0e756c', fontWeight: 700, fontSize: '12.5px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                                <RxIcon /> Prescription
+                              </button>
+                            )}
+                            {v.hasReceipt && (
+                              <button onClick={(e) => { e.stopPropagation(); setViewDoc({ visitId: v.visitId, kind: 'receipt' }); }} style={{ padding: '8px 13px', borderRadius: 9, border: '1px solid #cfe3df', background: '#f2f9f8', color: '#0e756c', fontWeight: 700, fontSize: '12.5px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                                <ReceiptIcon /> Payment receipt
+                              </button>
+                            )}
+                            {v.hasFiles && (
+                              <button onClick={(e) => { e.stopPropagation(); setFilesVisit(v.visitId); }} style={{ padding: '8px 13px', borderRadius: 9, border: '1px solid #cfe3df', background: '#f2f9f8', color: '#0e756c', fontWeight: 700, fontSize: '12.5px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                                <FolderIcon /> Documents ({v.filesCount})
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     ))}
                   </div>
                 </div>
@@ -1632,6 +1767,149 @@ export default function PortalApp() {
           })()}
         </main>
 
+        {/* ═══ PRESCRIPTION / RECEIPT SHEET ═══ */}
+        {viewDoc && me && (() => {
+          const v = me.visits.find(x => x.visitId === viewDoc.visitId);
+          if (!v) return null;
+          const c = v.clinical || {};
+          const meta = {
+            visitId: v.visitId, dateLabel: fmtDate(v.date), name: me.name, mobile: me.mobile,
+            patientId: myPatientId, ageGender: (me.age || '?') + ' yrs · ' + (me.gender || '—'),
+          };
+          const isRx = viewDoc.kind === 'rx';
+          const title = isRx ? 'Prescription' : 'Payment Receipt';
+          const rx = isRx ? buildRx(c, meta, CLINIC_NAME) : null;
+          const receipt = !isRx ? buildReceipt(c, meta) : null;
+          return (
+            <div id="rx-overlay" onClick={() => setViewDoc(null)} style={{ position: 'fixed', inset: 0, zIndex: 95, background: 'rgba(14,59,57,.6)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 14, overflow: 'auto' }}>
+              <div id="rx-sheet" onClick={e => e.stopPropagation()} style={{ background: '#fff', borderRadius: 18, width: '100%', maxWidth: 560, overflow: 'hidden', margin: 'auto' }}>
+                <div id="rx-chrome" style={{ background: '#0e3b39', color: '#fff', padding: '14px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                  <span style={{ fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: 16 }}>{title}</span>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button onClick={() => { try { window.print(); } catch {} }} style={{ padding: '8px 14px', borderRadius: 9, border: 0, background: '#12a094', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Save PDF</button>
+                    <button onClick={() => setViewDoc(null)} style={{ width: 32, height: 32, borderRadius: 9, border: 0, background: 'rgba(255,255,255,.15)', color: '#fff', fontSize: 15, cursor: 'pointer' }}>{'✕'}</button>
+                  </div>
+                </div>
+
+                {isRx && rx && (
+                  <div style={{ padding: '20px 20px 26px' }}>
+                    <div style={{ borderBottom: '2px solid #0e756c', paddingBottom: 12 }}>
+                      <span style={{ display: 'block', fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: 18, color: '#0e3b39' }}>{CLINIC_NAME}</span>
+                      <span style={{ display: 'block', fontSize: '11.5px', color: '#5c7a76', marginTop: 6 }}>Date: <strong style={{ color: '#0e3b39' }}>{rx.dateLabel}</strong> &middot; <span style={{ fontFamily: 'ui-monospace,monospace' }}>{rx.visitId}</span></span>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: '8px 20px', marginTop: 14, fontSize: 13 }}>
+                      <span style={{ color: '#5c7a76' }}>Patient: <strong style={{ color: '#0e3b39' }}>{rx.name}</strong></span>
+                      <span style={{ color: '#5c7a76' }}>Age / Gender: <strong style={{ color: '#0e3b39' }}>{rx.ageGender}</strong></span>
+                      <span style={{ color: '#5c7a76' }}>Mobile: <strong style={{ color: '#0e3b39' }}>{rx.mobile}</strong></span>
+                      <span style={{ color: '#5c7a76' }}>Medical history: <strong style={{ color: '#0e3b39' }}>{rx.medicalHistory}</strong></span>
+                    </div>
+                    <div style={{ marginTop: 14, padding: '13px 15px', borderRadius: 12, background: '#f7fbfa', border: '1px solid #e2efec', display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: '8px 20px', fontSize: 13 }}>
+                      <span style={{ color: '#5c7a76' }}>Chief complaint: <strong style={{ color: '#0e3b39' }}>{rx.chiefComplaint}</strong></span>
+                      <span style={{ color: '#5c7a76' }}>Description: <strong style={{ color: '#0e3b39' }}>{rx.description}</strong></span>
+                      <span style={{ color: '#5c7a76' }}>Treatment group: <strong style={{ color: '#0e3b39' }}>{rx.treatmentGroup}</strong></span>
+                      <span style={{ color: '#5c7a76' }}>Tooth number: <strong style={{ color: '#0e3b39' }}>{rx.toothNumber}</strong></span>
+                      <span style={{ color: '#5c7a76' }}>Current treatment: <strong style={{ color: '#0e3b39' }}>{rx.treatment}</strong></span>
+                      <span style={{ color: '#5c7a76' }}>Advised treatment: <strong style={{ color: '#0e3b39' }}>{rx.advisedTreatment}</strong></span>
+                    </div>
+                    <p style={{ fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: 15, color: '#0e3b39', margin: '18px 0 8px' }}>{'℞'} Medicines</p>
+                    {rx.noMeds && <p style={{ fontSize: 13, color: '#98b0ab' }}>No medicine prescribed.</p>}
+                    {rx.hasMeds && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        {rx.meds.map(vm => (
+                          <div key={vm.sn} style={{ border: '1px solid #e2efec', borderRadius: 12, padding: '11px 13px', background: '#fbfdfd' }}>
+                            <span style={{ display: 'block', fontSize: 14, fontWeight: 700, color: '#0e3b39' }}>{vm.sn}. {vm.name} <span style={{ color: '#98b0ab', fontWeight: 400 }}>({vm.unit})</span></span>
+                            <span style={{ display: 'block', fontSize: '12.5px', color: '#5c7a76', marginTop: 3 }}>{vm.dose} &middot; {vm.food} &middot; {vm.duration} <span style={{ color: '#98b0ab' }}>{vm.total}</span></span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {!isRx && receipt && (
+                  <div style={{ padding: '20px 20px 26px' }}>
+                    <div style={{ borderBottom: '2px solid #0e756c', paddingBottom: 12 }}>
+                      <span style={{ display: 'block', fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: 18, color: '#0e3b39' }}>{CLINIC_NAME}</span>
+                      <span style={{ display: 'block', fontSize: '11.5px', color: '#5c7a76', marginTop: 6 }}>Date: <strong style={{ color: '#0e3b39' }}>{receipt.dateLabel}</strong> &middot; <span style={{ fontFamily: 'ui-monospace,monospace' }}>{receipt.receiptNo}</span></span>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(160px,1fr))', gap: '8px 20px', marginTop: 14, fontSize: 13 }}>
+                      <span style={{ color: '#5c7a76' }}>Received from: <strong style={{ color: '#0e3b39' }}>{receipt.name}</strong></span>
+                      <span style={{ color: '#5c7a76' }}>Mobile: <strong style={{ color: '#0e3b39' }}>{receipt.mobile}</strong></span>
+                      <span style={{ color: '#5c7a76' }}>Patient ID: <strong style={{ color: '#0e3b39' }}>{receipt.patientId}</strong></span>
+                      <span style={{ color: '#5c7a76' }}>Mode: <strong style={{ color: '#0e3b39' }}>{receipt.mode}</strong></span>
+                    </div>
+                    <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column' }}>
+                      {receipt.lines.map(vl => (
+                        <div key={vl.sn} style={{ display: 'flex', justifyContent: 'space-between', gap: 14, padding: '10px 0', borderBottom: '1px solid #f0f6f5', fontSize: '13.5px' }}>
+                          <span style={{ color: '#0e3b39' }}>{vl.sn}. {vl.label}</span>
+                          <span style={{ color: '#33534f', fontWeight: 600 }}>{vl.amountLabel}</span>
+                        </div>
+                      ))}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, padding: '12px 0' }}>
+                        <span style={{ fontWeight: 700, color: '#0e3b39', fontSize: 14 }}>Total received</span>
+                        <span style={{ fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: 18, color: '#12805a' }}>{receipt.totalLabel}</span>
+                      </div>
+                    </div>
+                    <div style={{ padding: '12px 14px', borderRadius: 12, background: '#f7fbfa', border: '1px solid #e2efec', display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', fontSize: 13 }}>
+                      <span style={{ color: '#5c7a76' }}>Payment status: <strong style={{ color: '#0e3b39' }}>{receipt.status}</strong></span>
+                      <span style={{ color: '#5c7a76' }}>Balance due: <strong style={{ color: receipt.balanceColor }}>{receipt.balanceLabel}</strong></span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* ═══ FILES POPUP ═══ */}
+        {filesVisit && me && (() => {
+          const v = me.visits.find(x => x.visitId === filesVisit);
+          if (!v) return null;
+          const docs = ((v.clinical || {}).documents) || [];
+          if (docs.length === 0) return null;
+          return (
+            <div onClick={() => setFilesVisit(null)} style={{ position: 'fixed', inset: 0, zIndex: 95, background: 'rgba(14,59,57,.6)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 14, overflow: 'auto' }}>
+              <div onClick={e => e.stopPropagation()} style={{ background: '#fff', borderRadius: 20, width: '100%', maxWidth: 460, overflow: 'hidden', margin: 'auto' }}>
+                <div style={{ background: '#0e3b39', color: '#fff', padding: '16px 18px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
+                  <div style={{ minWidth: 0 }}>
+                    <span style={{ display: 'block', fontFamily: 'ui-monospace,monospace', fontSize: 12, color: '#7fd4c9', fontWeight: 700 }}>{v.visitId}</span>
+                    <span style={{ display: 'block', fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: 17 }}>Documents</span>
+                    <span style={{ display: 'block', fontSize: 12, color: '#bfe3dd', marginTop: 1 }}>{fmtDate(v.date)} &middot; {docs.length === 1 ? '1 document' : docs.length + ' documents'}</span>
+                  </div>
+                  <button onClick={() => setFilesVisit(null)} style={{ flexShrink: 0, width: 32, height: 32, borderRadius: 9, border: 0, background: 'rgba(255,255,255,.15)', color: '#fff', fontSize: 15, cursor: 'pointer' }}>{'✕'}</button>
+                </div>
+                <div style={{ padding: '14px 16px 20px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {docs.map((d, i) => {
+                    const isImg = /^image\//.test(d.type || '');
+                    const thumbSrc = isImg ? (d.dataUrl || null) : null;
+                    return (
+                      <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, border: '1px solid #e2efec', borderRadius: 14, padding: '11px 12px', background: '#fbfdfd' }}>
+                        <span style={{ flex: '0 0 auto', width: 50, height: 50, borderRadius: 11, background: '#eef4f3', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          {thumbSrc ? <img src={thumbSrc} alt={d.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <DocFileIcon />}
+                        </span>
+                        <span style={{ flex: 1, minWidth: 0, lineHeight: 1.3 }}>
+                          <span style={{ display: 'block', fontSize: '10.5px', fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: '#0e756c' }}>{d.kind || 'Other'}</span>
+                          <span style={{ display: 'block', fontSize: '13.5px', color: '#0e3b39', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.name}</span>
+                          <span style={{ display: 'block', fontSize: '11.5px', color: '#98b0ab' }}>{fileTypeLabel(d.type)}</span>
+                        </span>
+                        <button onClick={() => {
+                          if (d.s3Key) {
+                            getDocumentUrl(d.s3Key).then(url => { if (url) window.open(url, '_blank'); }).catch(() => {});
+                          } else if (d.dataUrl) {
+                            window.open(d.dataUrl, '_blank');
+                          }
+                        }} style={{ flex: '0 0 auto', padding: '9px 14px', borderRadius: 10, border: '1px solid #cfe3df', background: '#f2f9f8', color: '#0e756c', fontWeight: 700, fontSize: 13, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                          <EyeIcon /> View
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
         {/* ═══ BOTTOM TABS ═══ */}
         {showTabs && (
           <div>
@@ -1672,6 +1950,24 @@ export default function PortalApp() {
         @keyframes pulseDot {
           0%, 100% { opacity: 1; }
           50% { opacity: .35; }
+        }
+        @media print {
+          body * { visibility: hidden !important; }
+          #rx-sheet, #rx-sheet * { visibility: visible !important; }
+          #rx-chrome { display: none !important; }
+          #rx-overlay {
+            position: absolute !important; inset: auto !important;
+            top: 0 !important; left: 0 !important;
+            width: 100% !important; background: none !important;
+            padding: 0 !important; overflow: visible !important;
+            display: block !important; z-index: auto !important;
+          }
+          #rx-sheet {
+            position: absolute !important; left: 0 !important; top: 0 !important;
+            width: 100% !important; max-width: none !important;
+            margin: 0 !important; border-radius: 0 !important;
+            box-shadow: none !important; overflow: visible !important;
+          }
         }
       `}</style>
 
