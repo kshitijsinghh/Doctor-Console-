@@ -258,10 +258,19 @@ function PrescriptionSheet({ rx, onClose, clinicName, clinicAddress, doctorName,
               </>
             )}
             {hasTemplate && (
-              <div style={{ fontSize: 12, color: '#222', lineHeight: 1.6 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+              <div style={{ fontSize: 11.5, color: '#222', lineHeight: 1.5 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                   <span><strong>{rx.name}</strong> · {rx.ageGender} · {rx.mobile}</span>
                   <span>{rx.dateLabel}</span>
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px 14px', color: '#444', marginBottom: 4 }}>
+                  {rx.medicalHistory && rx.medicalHistory !== '—' && <span>Medical Hx: <strong>{rx.medicalHistory}</strong></span>}
+                  {rx.chiefComplaint && rx.chiefComplaint !== '—' && <span>Chief Complaint: <strong>{rx.chiefComplaint}</strong></span>}
+                  {rx.description && rx.description !== '—' && <span>Description: <strong>{rx.description}</strong></span>}
+                  {rx.treatmentGroup && rx.treatmentGroup !== '—' && <span>Treatment Group: <strong>{rx.treatmentGroup}</strong></span>}
+                  {rx.toothNumber && rx.toothNumber !== '—' && <span>Tooth #: <strong>{rx.toothNumber}</strong></span>}
+                  {rx.treatment && rx.treatment !== '—' && <span>Treatment: <strong>{rx.treatment}</strong></span>}
+                  {rx.advisedTreatment && rx.advisedTreatment !== '—' && <span>Advised: <strong>{rx.advisedTreatment}</strong></span>}
                 </div>
               </div>
             )}
