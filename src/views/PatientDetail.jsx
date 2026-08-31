@@ -95,8 +95,18 @@ function PrescriptionSheet({ rx, onClose, clinicName, clinicAddress, doctorName,
         </div>
         <div style={{ position: 'relative' }}>
           {hasTemplate && <img src={rxTemplateUrl} alt="" style={{ width: '100%', display: 'block' }} />}
+          {hasTemplate && (
+            <div style={{ position: 'absolute', top: '29%', left: '62%', right: '3%', fontSize: 11, color: '#111', fontWeight: 600, lineHeight: 2.1 }}>
+              <div>{rx.name}</div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span>{rx.ageGender}</span>
+                <span>{rx.dateLabel}</span>
+              </div>
+              <div>{rx.mobile}</div>
+            </div>
+          )}
           <div style={hasTemplate
-            ? { position: 'absolute', top: '42%', left: '4%', right: '4%', bottom: '10%', overflow: 'hidden' }
+            ? { position: 'absolute', top: '46%', left: '4%', right: '4%', bottom: '10%', overflow: 'hidden' }
             : { padding: '26px 28px 30px' }
           }>
             {!hasTemplate && (
@@ -128,12 +138,8 @@ function PrescriptionSheet({ rx, onClose, clinicName, clinicAddress, doctorName,
               </>
             )}
             {hasTemplate && (
-              <div style={{ fontSize: 11.5, color: '#222', lineHeight: 1.5 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                  <span><strong>{rx.name}</strong> · {rx.ageGender} · {rx.mobile}</span>
-                  <span>{rx.dateLabel}</span>
-                </div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px 14px', color: '#444', marginBottom: 4 }}>
+              <div style={{ fontSize: 11.5, color: '#222', lineHeight: 1.5, marginBottom: 4 }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px 14px', color: '#444' }}>
                   {rx.medicalHistory && rx.medicalHistory !== '—' && <span>Medical Hx: <strong>{rx.medicalHistory}</strong></span>}
                   {rx.chiefComplaint && rx.chiefComplaint !== '—' && <span>Chief Complaint: <strong>{rx.chiefComplaint}</strong></span>}
                   {rx.description && rx.description !== '—' && <span>Description: <strong>{rx.description}</strong></span>}

@@ -46,7 +46,7 @@ export default function Patients({ allPatients, outstandingTotal, onOpenPatient 
     filtered = filtered.filter((p) => p.status === patPayFilter);
   }
 
-  filtered.sort((a, b) => (b.lastDate || '').localeCompare(a.lastDate || ''));
+  filtered.sort((a, b) => (b.lastTimestamp || 0) - (a.lastTimestamp || 0));
 
   const perPage = isMobile ? 6 : 10;
   const totalPages = Math.max(1, Math.ceil(filtered.length / perPage));
