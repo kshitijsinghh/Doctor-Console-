@@ -6,7 +6,7 @@ import Clinical from './views/Clinical';
 import Appointments from './views/Appointments';
 import Patients from './views/Patients';
 import PatientDetail from './views/PatientDetail';
-import { fetchList, saveIntake, saveClinical, uploadQr, getCachedList, fetchOrg } from './api';
+import { fetchList, saveIntake, saveClinical, uploadQr, getCachedList, fetchOrg, getRxTemplateUrl } from './api';
 
 function today() {
   const d = new Date();
@@ -105,6 +105,7 @@ export default function App({ user, onLogout }) {
   const [showQr, setShowQr] = useState(false);
   const [clinicalReadOnly, setClinicalReadOnly] = useState(false);
   const [org, setOrg] = useState(null);
+  const [rxTemplateUrl, setRxTemplateUrl] = useState(null);
 
   function applySnapshot(res) {
     setDbState({ patients: res.patients, order: res.order, seq: res.seq, upiQr: res.upiQr, labNames: res.labNames || [] });
@@ -132,7 +133,10 @@ export default function App({ user, onLogout }) {
     } else {
       loadList(false);
     }
-    fetchOrg().then(o => { if (o) setOrg(o); });
+    fetchOrg().then(o => {
+      if (o) setOrg(o);
+      if (o?.rxTemplateKey) getRxTemplateUrl().then(u => { if (u) setRxTemplateUrl(u); });
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -529,6 +533,10 @@ export default function App({ user, onLogout }) {
       if (bal < 0) bal = 0;
     });
     const lastVisit = sorted.length > 0 ? sorted[sorted.length - 1] : null;
+    const lastTs = p.visits.reduce((mx, v) => {
+      const t = Date.parse(v.createdAt) || 0;
+      return t > mx ? t : mx;
+    }, 0);
     let st;
     if (bal > 0 && totalP > 0) st = 'Partially paid';
     else if (bal > 0) st = 'Not paid';
@@ -538,6 +546,7 @@ export default function App({ user, onLogout }) {
       ageGender: (p.age || '?') + '/' + (p.gender || '—'),
       lastDate: lastVisit ? lastVisit.date : '',
       lastLabel: lastVisit ? fmtDate(lastVisit.date) : '—',
+      lastTimestamp: lastTs,
       visitCount: p.visits.length,
       outstanding: bal, status: st,
     };
@@ -693,6 +702,7 @@ export default function App({ user, onLogout }) {
             onGoBack={goBack}
             clinicName={org?.clinicName} clinicAddress={org ? [org.clinicAddress, ...(org.contactNumbers || []).map(n => '+91 ' + n)].filter(Boolean).join(' · ') : ''}
             doctorName={org?.doctorName} doctorQualification={org?.doctorQualification}
+            rxTemplateUrl={rxTemplateUrl}
           />
         )}
 
@@ -735,6 +745,7 @@ export default function App({ user, onLogout }) {
             onCreateNewVisit={() => onCreateNewVisitFromAppt(curPatientId)}
             clinicName={org?.clinicName} clinicAddress={org ? [org.clinicAddress, ...(org.contactNumbers || []).map(n => '+91 ' + n)].filter(Boolean).join(' · ') : ''}
             doctorName={org?.doctorName} doctorQualification={org?.doctorQualification}
+            rxTemplateUrl={rxTemplateUrl}
           />
         )}
       </main>

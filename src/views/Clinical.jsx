@@ -211,7 +211,8 @@ function buildReceipt(cf, meta) {
 }
 
 /* ── Print-ready Prescription sheet ── */
-function PrescriptionSheet({ rx, onClose, clinicName, clinicAddress, doctorName, doctorQualification }) {
+function PrescriptionSheet({ rx, onClose, clinicName, clinicAddress, doctorName, doctorQualification, rxTemplateUrl }) {
+  const hasTemplate = !!rxTemplateUrl;
   return (
     <div id="rx-overlay" onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 90, background: 'rgba(14,59,57,.6)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 20, overflow: 'auto' }}>
       <div id="rx-sheet" onClick={(e) => e.stopPropagation()} style={{ background: '#fff', borderRadius: 18, width: '100%', maxWidth: 720, overflow: 'hidden', margin: 'auto' }}>
@@ -222,58 +223,80 @@ function PrescriptionSheet({ rx, onClose, clinicName, clinicAddress, doctorName,
             <button onClick={onClose} style={{ width: 32, height: 32, borderRadius: 8, border: 0, background: 'rgba(255,255,255,.15)', color: '#fff', fontSize: 15, cursor: 'pointer' }}>✕</button>
           </div>
         </div>
-        <div style={{ padding: '26px 28px 30px' }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, borderBottom: '2px solid #0e756c', paddingBottom: 14, flexWrap: 'wrap' }}>
-            <div>
-              <span style={{ display: 'block', fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: 20, color: '#0e3b39' }}>{clinicName}</span>
-              <span style={{ display: 'block', fontSize: 12, color: '#5c7a76', marginTop: 2 }}>{clinicAddress}</span>
-            </div>
-            <span style={{ flexShrink: 0, textAlign: 'right', fontSize: 12, color: '#5c7a76', lineHeight: 1.5 }}>
-              <span style={{ display: 'block' }}>Date: <strong style={{ color: '#0e3b39' }}>{rx.dateLabel}</strong></span>
-              <span style={{ display: 'block', fontFamily: 'ui-monospace,monospace' }}>{rx.visitId}</span>
-            </span>
+        <div style={{ position: 'relative' }}>
+          {hasTemplate && <img src={rxTemplateUrl} alt="" style={{ width: '100%', display: 'block' }} />}
+          <div style={hasTemplate
+            ? { position: 'absolute', top: '42%', left: '4%', right: '4%', bottom: '10%', overflow: 'hidden' }
+            : { padding: '26px 28px 30px' }
+          }>
+            {!hasTemplate && (
+              <>
+                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, borderBottom: '2px solid #0e756c', paddingBottom: 14, flexWrap: 'wrap' }}>
+                  <div>
+                    <span style={{ display: 'block', fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: 20, color: '#0e3b39' }}>{clinicName}</span>
+                    <span style={{ display: 'block', fontSize: 12, color: '#5c7a76', marginTop: 2 }}>{clinicAddress}</span>
+                  </div>
+                  <span style={{ flexShrink: 0, textAlign: 'right', fontSize: 12, color: '#5c7a76', lineHeight: 1.5 }}>
+                    <span style={{ display: 'block' }}>Date: <strong style={{ color: '#0e3b39' }}>{rx.dateLabel}</strong></span>
+                    <span style={{ display: 'block', fontFamily: 'ui-monospace,monospace' }}>{rx.visitId}</span>
+                  </span>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))', gap: '10px 22px', marginTop: 16, fontSize: 13.5 }}>
+                  <span style={{ color: '#5c7a76' }}>Patient: <strong style={{ color: '#0e3b39' }}>{rx.name}</strong></span>
+                  <span style={{ color: '#5c7a76' }}>Age / Gender: <strong style={{ color: '#0e3b39' }}>{rx.ageGender}</strong></span>
+                  <span style={{ color: '#5c7a76' }}>Mobile: <strong style={{ color: '#0e3b39' }}>{rx.mobile}</strong></span>
+                  <span style={{ color: '#5c7a76' }}>Medical history: <strong style={{ color: '#0e3b39' }}>{rx.medicalHistory}</strong></span>
+                </div>
+                <div style={{ marginTop: 18, padding: '14px 16px', borderRadius: 12, background: '#f7fbfa', border: '1px solid #e2efec', display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))', gap: '10px 22px', fontSize: 13.5 }}>
+                  <span style={{ color: '#5c7a76' }}>Chief complaint: <strong style={{ color: '#0e3b39' }}>{rx.chiefComplaint}</strong></span>
+                  <span style={{ color: '#5c7a76' }}>Description: <strong style={{ color: '#0e3b39' }}>{rx.description}</strong></span>
+                  <span style={{ color: '#5c7a76' }}>Treatment group: <strong style={{ color: '#0e3b39' }}>{rx.treatmentGroup}</strong></span>
+                  <span style={{ color: '#5c7a76' }}>Tooth number: <strong style={{ color: '#0e3b39' }}>{rx.toothNumber}</strong></span>
+                  <span style={{ color: '#5c7a76' }}>Current treatment: <strong style={{ color: '#0e3b39' }}>{rx.treatment}</strong></span>
+                  <span style={{ color: '#5c7a76' }}>Advised treatment: <strong style={{ color: '#0e3b39' }}>{rx.advisedTreatment}</strong></span>
+                </div>
+              </>
+            )}
+            {hasTemplate && (
+              <div style={{ fontSize: 12, color: '#222', lineHeight: 1.6 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                  <span><strong>{rx.name}</strong> · {rx.ageGender} · {rx.mobile}</span>
+                  <span>{rx.dateLabel}</span>
+                </div>
+              </div>
+            )}
+            <p style={{ fontFamily: hasTemplate ? 'inherit' : "'Bricolage Grotesque'", fontWeight: 700, fontSize: hasTemplate ? 13 : 15, color: '#0e3b39', margin: hasTemplate ? '2px 0 4px' : '20px 0 8px' }}>℞</p>
+            {rx.noMeds && <p style={{ fontSize: 13.5, color: '#98b0ab' }}>No medicine prescribed.</p>}
+            {rx.hasMeds && (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: hasTemplate ? 11 : 13, minWidth: hasTemplate ? 0 : 480 }}>
+                  <thead><tr style={{ textAlign: 'left', color: hasTemplate ? '#555' : '#7a9994', fontSize: hasTemplate ? 10 : 11, letterSpacing: '.05em', textTransform: 'uppercase', borderBottom: '1px solid #ccc' }}>
+                    <th style={{ padding: hasTemplate ? '4px 4px' : '8px 6px', fontWeight: 700 }}>#</th>
+                    <th style={{ padding: hasTemplate ? '4px 4px' : '8px 6px', fontWeight: 700 }}>Medicine</th>
+                    <th style={{ padding: hasTemplate ? '4px 4px' : '8px 6px', fontWeight: 700 }}>Dosage</th>
+                    <th style={{ padding: hasTemplate ? '4px 4px' : '8px 6px', fontWeight: 700 }}>Food</th>
+                    <th style={{ padding: hasTemplate ? '4px 4px' : '8px 6px', fontWeight: 700 }}>Duration</th>
+                  </tr></thead>
+                  <tbody>
+                    {rx.meds.map((rm) => (
+                      <tr key={rm.sn} style={{ borderBottom: '1px solid #e8e8e8' }}>
+                        <td style={{ padding: hasTemplate ? '4px 4px' : '9px 6px', color: '#8aa8a3' }}>{rm.sn}</td>
+                        <td style={{ padding: hasTemplate ? '4px 4px' : '9px 6px', color: '#0e3b39', fontWeight: 700 }}>{rm.name} <span style={{ color: '#98b0ab', fontWeight: 400 }}>({rm.unit})</span></td>
+                        <td style={{ padding: hasTemplate ? '4px 4px' : '9px 6px', color: '#33534f' }}>{rm.dose} <span style={{ color: '#98b0ab' }}>{rm.total}</span></td>
+                        <td style={{ padding: hasTemplate ? '4px 4px' : '9px 6px', color: '#33534f' }}>{rm.food}</td>
+                        <td style={{ padding: hasTemplate ? '4px 4px' : '9px 6px', color: '#33534f' }}>{rm.duration}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            {!hasTemplate && (doctorName || doctorQualification) && (
+              <div style={{ marginTop: 34, display: 'flex', justifyContent: 'flex-end' }}>
+                <span style={{ textAlign: 'center', fontSize: 12.5, color: '#5c7a76', borderTop: '1px solid #cfe3df', paddingTop: 7, minWidth: 190 }}>Dr. {doctorName}{doctorQualification ? <><br /><span style={{ fontSize: 11.5, color: '#98b0ab' }}>{doctorQualification}</span></> : null}</span>
+              </div>
+            )}
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))', gap: '10px 22px', marginTop: 16, fontSize: 13.5 }}>
-            <span style={{ color: '#5c7a76' }}>Patient: <strong style={{ color: '#0e3b39' }}>{rx.name}</strong></span>
-            <span style={{ color: '#5c7a76' }}>Age / Gender: <strong style={{ color: '#0e3b39' }}>{rx.ageGender}</strong></span>
-            <span style={{ color: '#5c7a76' }}>Mobile: <strong style={{ color: '#0e3b39' }}>{rx.mobile}</strong></span>
-            <span style={{ color: '#5c7a76' }}>Medical history: <strong style={{ color: '#0e3b39' }}>{rx.medicalHistory}</strong></span>
-          </div>
-          <div style={{ marginTop: 18, padding: '14px 16px', borderRadius: 12, background: '#f7fbfa', border: '1px solid #e2efec', display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))', gap: '10px 22px', fontSize: 13.5 }}>
-            <span style={{ color: '#5c7a76' }}>Chief complaint: <strong style={{ color: '#0e3b39' }}>{rx.chiefComplaint}</strong></span>
-            <span style={{ color: '#5c7a76' }}>Description: <strong style={{ color: '#0e3b39' }}>{rx.description}</strong></span>
-            <span style={{ color: '#5c7a76' }}>Treatment group: <strong style={{ color: '#0e3b39' }}>{rx.treatmentGroup}</strong></span>
-            <span style={{ color: '#5c7a76' }}>Tooth number: <strong style={{ color: '#0e3b39' }}>{rx.toothNumber}</strong></span>
-            <span style={{ color: '#5c7a76' }}>Current treatment: <strong style={{ color: '#0e3b39' }}>{rx.treatment}</strong></span>
-            <span style={{ color: '#5c7a76' }}>Advised treatment: <strong style={{ color: '#0e3b39' }}>{rx.advisedTreatment}</strong></span>
-          </div>
-          <p style={{ fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: 15, color: '#0e3b39', margin: '20px 0 8px' }}>℞ Prescription</p>
-          {rx.noMeds && <p style={{ fontSize: 13.5, color: '#98b0ab' }}>No medicine prescribed.</p>}
-          {rx.hasMeds && (
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 480 }}>
-                <thead><tr style={{ textAlign: 'left', color: '#7a9994', fontSize: 11, letterSpacing: '.05em', textTransform: 'uppercase', borderBottom: '1px solid #e2efec' }}>
-                  <th style={{ padding: '8px 6px', fontWeight: 700 }}>#</th><th style={{ padding: '8px 6px', fontWeight: 700 }}>Medicine</th><th style={{ padding: '8px 6px', fontWeight: 700 }}>Dosage</th><th style={{ padding: '8px 6px', fontWeight: 700 }}>Food</th><th style={{ padding: '8px 6px', fontWeight: 700 }}>Duration</th>
-                </tr></thead>
-                <tbody>
-                  {rx.meds.map((rm) => (
-                    <tr key={rm.sn} style={{ borderBottom: '1px solid #f0f6f5' }}>
-                      <td style={{ padding: '9px 6px', color: '#8aa8a3' }}>{rm.sn}</td>
-                      <td style={{ padding: '9px 6px', color: '#0e3b39', fontWeight: 700 }}>{rm.name} <span style={{ color: '#98b0ab', fontWeight: 400 }}>({rm.unit})</span></td>
-                      <td style={{ padding: '9px 6px', color: '#33534f' }}>{rm.dose} <span style={{ color: '#98b0ab' }}>{rm.total}</span></td>
-                      <td style={{ padding: '9px 6px', color: '#33534f' }}>{rm.food}</td>
-                      <td style={{ padding: '9px 6px', color: '#33534f' }}>{rm.duration}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-          {(doctorName || doctorQualification) && (
-            <div style={{ marginTop: 34, display: 'flex', justifyContent: 'flex-end' }}>
-              <span style={{ textAlign: 'center', fontSize: 12.5, color: '#5c7a76', borderTop: '1px solid #cfe3df', paddingTop: 7, minWidth: 190 }}>Dr. {doctorName}{doctorQualification ? <><br /><span style={{ fontSize: 11.5, color: '#98b0ab' }}>{doctorQualification}</span></> : null}</span>
-            </div>
-          )}
         </div>
       </div>
     </div>
@@ -357,6 +380,7 @@ export default function Clinical({
   labNames,
   readOnly, onCreateNewVisit,
   clinicName, clinicAddress, doctorName, doctorQualification,
+  rxTemplateUrl,
 }) {
   const [step, setStep] = useState(1);
   const [detailVisit, setDetailVisit] = useState(null);
@@ -984,9 +1008,9 @@ export default function Clinical({
       ) : null}
 
       {/* ── Modals ── */}
-      {rxOpen && <PrescriptionSheet rx={buildRx(cform, meta)} onClose={() => setRxOpen(false)} clinicName={clinicName || ''} clinicAddress={clinicAddress || ''} doctorName={doctorName} doctorQualification={doctorQualification} />}
+      {rxOpen && <PrescriptionSheet rx={buildRx(cform, meta)} onClose={() => setRxOpen(false)} clinicName={clinicName || ''} clinicAddress={clinicAddress || ''} doctorName={doctorName} doctorQualification={doctorQualification} rxTemplateUrl={rxTemplateUrl} />}
       {rcOpen && <ReceiptSheet receipt={buildReceipt(cform, meta)} onClose={() => setRcOpen(false)} clinicName={clinicName || ''} clinicAddress={clinicAddress || ''} />}
-      {viewDoc && viewDoc.kind === 'rx' && <PrescriptionSheet rx={viewDoc.data} onClose={() => setViewDoc(null)} clinicName={clinicName || ''} clinicAddress={clinicAddress || ''} doctorName={doctorName} doctorQualification={doctorQualification} />}
+      {viewDoc && viewDoc.kind === 'rx' && <PrescriptionSheet rx={viewDoc.data} onClose={() => setViewDoc(null)} clinicName={clinicName || ''} clinicAddress={clinicAddress || ''} doctorName={doctorName} doctorQualification={doctorQualification} rxTemplateUrl={rxTemplateUrl} />}
       {viewDoc && viewDoc.kind === 'receipt' && <ReceiptSheet receipt={viewDoc.data} onClose={() => setViewDoc(null)} clinicName={clinicName || ''} clinicAddress={clinicAddress || ''} />}
 
       {detail && (

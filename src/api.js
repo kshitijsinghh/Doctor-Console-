@@ -130,3 +130,11 @@ export async function getDocumentUrl(key) {
   return json.url;
 }
 
+export async function getRxTemplateUrl() {
+  if (!AWS_URL || !CLINIC_ID) return null;
+  try {
+    const json = await awsJson(`${AWS_URL}/org/${CLINIC_ID}/rx-template`);
+    return json.url;
+  } catch { return null; }
+}
+
