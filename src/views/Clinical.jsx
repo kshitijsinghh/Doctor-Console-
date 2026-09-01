@@ -184,6 +184,7 @@ function buildRx(cf, meta) {
     })),
     hasMeds: (cf.medicines || []).some(m => m.name),
     noMeds: !(cf.medicines || []).some(m => m.name),
+    comments: cf.comments || '',
   };
 }
 
@@ -228,6 +229,7 @@ function PrescriptionSheet({ rx, onClose, clinicName, clinicAddress, doctorName,
       treatmentGroup: rx.treatmentGroup, toothNumber: rx.toothNumber,
       treatment: rx.treatment, advisedTreatment: rx.advisedTreatment,
       medicalHistory: rx.medicalHistory,
+      comments: rx.comments,
       medicines: (rx.meds || []).map(m => ({ name: m.name, unit: m.unit, dose: m.dose, food: m.food, duration: m.duration })),
     };
     generatePrescriptionPdf(visitData)
@@ -244,7 +246,7 @@ function PrescriptionSheet({ rx, onClose, clinicName, clinicAddress, doctorName,
           <div style={{ display: 'flex', gap: 8 }}>
             {hasDocxTemplate && docxUrl && (
               <a href={docxUrl} target="_blank" rel="noopener noreferrer" style={{ padding: '8px 15px', borderRadius: 9, border: 0, background: '#12a094', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer', textDecoration: 'none' }}>
-                {docxFormat === 'pdf' ? 'Open PDF' : 'Download'}
+                {docxFormat === 'docx' ? 'Download' : 'Print / Save PDF'}
               </a>
             )}
             {!hasDocxTemplate && <button onClick={() => window.print()} style={{ padding: '8px 15px', borderRadius: 9, border: 0, background: '#12a094', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Print / Save PDF</button>}
@@ -268,8 +270,8 @@ function PrescriptionSheet({ rx, onClose, clinicName, clinicAddress, doctorName,
                 <p style={{ fontSize: 12, color: '#888', marginTop: 8 }}>{docxError}</p>
               </div>
             )}
-            {docxUrl && docxFormat === 'pdf' && (
-              <iframe src={docxUrl} style={{ width: '100%', height: 700, border: 'none' }} title="Prescription PDF" />
+            {docxUrl && (docxFormat === 'pdf' || docxFormat === 'html') && (
+              <iframe src={docxUrl} style={{ width: '100%', height: 700, border: 'none' }} title="Prescription" />
             )}
             {docxUrl && docxFormat === 'docx' && (
               <div style={{ padding: 40, textAlign: 'center' }}>
