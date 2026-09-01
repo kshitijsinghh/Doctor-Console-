@@ -138,3 +138,13 @@ export async function getRxTemplateUrl() {
   } catch { return null; }
 }
 
+export async function generatePrescriptionPdf(visitData) {
+  if (!AWS_URL || !CLINIC_ID) throw new Error('AWS not configured');
+  const json = await awsJson(`${AWS_URL}/generate-pdf`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ clinicId: CLINIC_ID, type: 'prescription', visitData }),
+  });
+  return json;
+}
+

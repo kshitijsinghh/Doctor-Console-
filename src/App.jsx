@@ -6,7 +6,7 @@ import Clinical from './views/Clinical';
 import Appointments from './views/Appointments';
 import Patients from './views/Patients';
 import PatientDetail from './views/PatientDetail';
-import { fetchList, saveIntake, saveClinical, uploadQr, getCachedList, fetchOrg, getRxTemplateUrl } from './api';
+import { fetchList, saveIntake, saveClinical, uploadQr, getCachedList, fetchOrg, getRxTemplateUrl, generatePrescriptionPdf } from './api';
 
 function today() {
   const d = new Date();
@@ -135,7 +135,9 @@ export default function App({ user, onLogout }) {
     }
     fetchOrg().then(o => {
       if (o) setOrg(o);
-      if (o?.rxTemplateKey) getRxTemplateUrl().then(u => { if (u) setRxTemplateUrl(u); });
+      if (o?.rxTemplateKey && !o.rxTemplateKey.endsWith('.docx')) {
+        getRxTemplateUrl().then(u => { if (u) setRxTemplateUrl(u); });
+      }
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -703,6 +705,7 @@ export default function App({ user, onLogout }) {
             clinicName={org?.clinicName} clinicAddress={org ? [org.clinicAddress, ...(org.contactNumbers || []).map(n => '+91 ' + n)].filter(Boolean).join(' · ') : ''}
             doctorName={org?.doctorName} doctorQualification={org?.doctorQualification}
             rxTemplateUrl={rxTemplateUrl}
+            hasDocxTemplate={!!org?.rxTemplateKey?.endsWith('.docx')}
           />
         )}
 
@@ -746,6 +749,7 @@ export default function App({ user, onLogout }) {
             clinicName={org?.clinicName} clinicAddress={org ? [org.clinicAddress, ...(org.contactNumbers || []).map(n => '+91 ' + n)].filter(Boolean).join(' · ') : ''}
             doctorName={org?.doctorName} doctorQualification={org?.doctorQualification}
             rxTemplateUrl={rxTemplateUrl}
+            hasDocxTemplate={!!org?.rxTemplateKey?.endsWith('.docx')}
           />
         )}
       </main>
