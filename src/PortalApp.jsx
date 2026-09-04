@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { fetchList, portalCheckin, savePatientProblem, getDocumentUrl } from './api';
+import { fetchList, portalCheckin, savePatientProblem, getDocumentUrl, fetchOrg, generatePrescriptionPdf, generateReceiptPdf } from './api';
 import { getFirebaseAuth, RecaptchaVerifier, signInWithPhoneNumber, signOut as firebaseSignOut } from './firebase';
 
 /* ─── helpers ─── */
@@ -41,11 +41,6 @@ function findAllByMobile(db, mobile) {
 function treatmentLabel(c) {
   if (!c) return '—';
   return (/Other/.test(c.treatment || '') && c.treatmentOther) ? c.treatmentOther : (c.treatment || '—');
-}
-function complaintLabel(c) {
-  if (!c) return '';
-  const cc = Array.isArray(c.chiefComplaint) ? c.chiefComplaint.join(', ') : (c.chiefComplaint || '');
-  return cc;
 }
 
 function asList(x) { return Array.isArray(x) ? x : (x ? [x] : []); }
@@ -114,6 +109,24 @@ function fileTypeLabel(type) {
   return 'File';
 }
 
+function buildVisitData(me, v, myPatientId) {
+  const c = v.clinical || {};
+  return {
+    clinicName: '', patientName: me.name, patientAge: me.age || '', patientGender: me.gender || '',
+    patientMobile: me.mobile || '', patientId: myPatientId, visitId: v.visitId,
+    visitDate: v.date, medicalHistory: c.medicalHistory || '',
+    chiefComplaint: listLabel(c.chiefComplaint, ''),
+    chiefDescription: c.chiefDescription || '',
+    treatmentGroup: listLabel(c.treatmentGroup, ''),
+    treatment: trLabel(c) || '', advisedTreatment: listLabel(c.advisedTreatment, ''),
+    toothNumber: listLabel(c.toothNumber, ''),
+    medicines: c.medicines || [], treatmentCost: c.treatmentCost || '',
+    amountPaid: c.amountPaid || '', balanceDue: c.balanceDue || '',
+    paymentMode: c.paymentMode || '', paymentStatus: c.paymentStatus || '',
+    paySplits: c.paySplits || [],
+  };
+}
+
 const SESSION_KEY = 'patient_session';
 const GENDERS = ['Male', 'Female', 'Other'];
 const CLINIC_NAME = 'PatientPad';
@@ -142,6 +155,9 @@ const PlusIcon = () => (
 );
 const HomeIcon = () => (
   <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5.5 9.5V20h13V9.5"/></svg>
+);
+const HistoryIcon = () => (
+  <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M12 8v4l3 2"/><path d="M3.05 11a9 9 0 1 1 .5 4"/><path d="M3 21v-6h6"/></svg>
 );
 const FamilyIcon = () => (
   <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M15.5 11a3 3 0 1 0-1.6-5.5"/><path d="M3 19v-1.4A3.6 3.6 0 0 1 6.6 14h4.8a3.6 3.6 0 0 1 3.6 3.6V19M17 14h.6a3.4 3.4 0 0 1 3.4 3.4V19"/></svg>
@@ -176,6 +192,9 @@ const DocFileIcon = () => (
 );
 const ChevronRight = () => (
   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#98b0ab" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M9 6l6 6-6 6"/></svg>
+);
+const BigCheckIcon = ({ size = 18 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
 );
 
 /* ═══════════════════════════════════════════
@@ -213,6 +232,9 @@ export default function PortalApp() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [refreshing, setRefreshing] = useState(false);
+
+  /* ── org config (template keys) ── */
+  const [org, setOrg] = useState(null);
 
   /* ── auth ── */
   const [authedMobile, setAuthedMobile] = useState('');
@@ -257,9 +279,19 @@ export default function PortalApp() {
   /* ── member sheet ── */
   const [memberSheet, setMemberSheet] = useState(false);
 
+  /* ── confirm-who sheet ── */
+  const [confirmWho, setConfirmWho] = useState(false);
+
   /* ── document sheets + files popup ── */
   const [viewDoc, setViewDoc] = useState(null);
   const [filesVisit, setFilesVisit] = useState(null);
+
+  /* ── DOCX template doc viewing ── */
+  const [docxLoading, setDocxLoading] = useState(false);
+  const [docxContent, setDocxContent] = useState(null);
+
+  const hasDocxRxTemplate = !!(org?.rxTemplateKey?.endsWith('.docx'));
+  const hasDocxReceiptTemplate = !!(org?.receiptTemplateKey?.endsWith('.docx'));
 
   /* ─── helpers for state ─── */
   function applySnapshot(res) {
@@ -283,6 +315,7 @@ export default function PortalApp() {
   /* ─── init: restore session, load data ─── */
   useEffect(() => {
     loadList(false);
+    fetchOrg().then(o => { if (o) setOrg(o); });
   }, [loadList]);
 
   /* Once db is loaded, restore session */
@@ -294,7 +327,6 @@ export default function PortalApp() {
       const s = JSON.parse(raw);
       if (!s) return;
 
-      // Mobile-based session
       if (s.mobile) {
         setAuthedMobile(s.mobile);
         const matches = findAllByMobile(db, s.mobile);
@@ -307,7 +339,6 @@ export default function PortalApp() {
         return;
       }
 
-      // Email-based session (Google SSO)
       if (s.email) {
         setAuthedEmail(s.email);
         const found = db.order.find(id => (db.patients[id].email || '').toLowerCase() === s.email.toLowerCase());
@@ -575,6 +606,7 @@ export default function PortalApp() {
     setEditingProblem(false);
     setDetailVisitId('');
     setMemberSheet(false);
+    setConfirmWho(false);
     setAuthError('');
     setAuthChecking(false);
   }
@@ -605,7 +637,6 @@ export default function PortalApp() {
       }
     }
 
-    // Duplicate name check when adding member
     if (regAddingMember) {
       const nameKey = reg.name.trim().toLowerCase();
       const dup = existing.some(p => p.name.trim().toLowerCase() === nameKey);
@@ -666,7 +697,6 @@ export default function PortalApp() {
       setProblemSaved(true);
       setEditingProblem(false);
     } catch {
-      // Optimistic: save locally anyway
       setProblemSaved(true);
       setEditingProblem(false);
     } finally {
@@ -680,7 +710,7 @@ export default function PortalApp() {
     setDetailVisitId('');
     setMemberSheet(false);
   }
-  function goRecords() {
+  function goHistory() {
     setView('records');
     setDetailVisitId('');
   }
@@ -700,13 +730,33 @@ export default function PortalApp() {
     setMemberSheet(false);
   }
 
+  /* ─── check in with confirm-who flow ─── */
+  function handleCheckinCta() {
+    if (!me || !db) return;
+    const onMobile = findAllByMobile(db, me.mobile);
+    if (onMobile.length > 1) {
+      setConfirmWho(true);
+    } else {
+      doCheckinForMe();
+    }
+  }
+
+  function doCheckinForMe() {
+    setConfirmWho(false);
+    setView('register');
+    setIsAddingForFamily(false);
+    setRegAddingMember(false);
+    setRegPickedId(myPatientId);
+    setRegError('');
+    setReg({ mobile: authedMobile || me.mobile, name: me.name, age: me.age, gender: me.gender });
+  }
+
   /* ─── switch to another family member ─── */
   function switchToMember(pid) {
     setMyPatientId(pid);
     setView('home');
     setMemberSheet(false);
     setDetailVisitId('');
-    // restore problem state for this member
     const p = db.patients[pid];
     if (p) {
       const t = localToday();
@@ -736,6 +786,61 @@ export default function PortalApp() {
       applySnapshot(res);
     } catch { /* ignore */ }
     setRefreshing(false);
+  }
+
+  /* ─── open DOCX-template prescription/receipt ─── */
+  async function openDocxRx(visitId) {
+    const v = me.visits.find(x => x.visitId === visitId);
+    if (!v) return;
+    setDocxLoading(true);
+    setDocxContent(null);
+    setViewDoc({ visitId, kind: 'rx' });
+    try {
+      const vd = buildVisitData(me, v, myPatientId);
+      const res = await generatePrescriptionPdf(vd);
+      if (res.format === 'html' && res.url) {
+        setDocxContent({ format: 'html', url: res.url });
+      } else if (res.url) {
+        setDocxContent({ format: 'docx', url: res.url });
+      }
+    } catch { /* fall through, viewDoc stays open with standard view */ }
+    setDocxLoading(false);
+  }
+
+  async function openDocxReceipt(visitId) {
+    const v = me.visits.find(x => x.visitId === visitId);
+    if (!v) return;
+    setDocxLoading(true);
+    setDocxContent(null);
+    setViewDoc({ visitId, kind: 'receipt' });
+    try {
+      const vd = buildVisitData(me, v, myPatientId);
+      const res = await generateReceiptPdf(vd);
+      if (res.format === 'html' && res.url) {
+        setDocxContent({ format: 'html', url: res.url });
+      } else if (res.url) {
+        setDocxContent({ format: 'docx', url: res.url });
+      }
+    } catch { /* fall through */ }
+    setDocxLoading(false);
+  }
+
+  function handleOpenRx(visitId) {
+    if (hasDocxRxTemplate) {
+      openDocxRx(visitId);
+    } else {
+      setDocxContent(null);
+      setViewDoc({ visitId, kind: 'rx' });
+    }
+  }
+
+  function handleOpenReceipt(visitId) {
+    if (hasDocxReceiptTemplate) {
+      openDocxReceipt(visitId);
+    } else {
+      setDocxContent(null);
+      setViewDoc({ visitId, kind: 'receipt' });
+    }
   }
 
   /* ═══════════════════════════════════════
@@ -771,10 +876,8 @@ export default function PortalApp() {
   let queueNo = null;
   let aheadCount = 0;
   if (me && db) {
-    // Find today's visit for this patient to get queue number
     const todayVisit = me.visits.find(v => v.date === today);
     if (todayVisit) {
-      // Queue number = count of patients who checked in today with visit date = today, in order
       const todayPatientIds = [];
       for (const pid of db.order) {
         const p = db.patients[pid];
@@ -782,11 +885,8 @@ export default function PortalApp() {
           todayPatientIds.push(pid);
         }
       }
-      // Queue number is the position in today's order (1-based)
-      // Backend assigns queueNumber on portalCheckin; look for it on the visit
       if (todayVisit.queueNumber) {
         queueNo = todayVisit.queueNumber;
-        // Count patients ahead: those with lower queue number whose visit today is still open
         for (const pid of db.order) {
           if (pid === myPatientId) continue;
           const p = db.patients[pid];
@@ -794,7 +894,6 @@ export default function PortalApp() {
           if (tv && !tv.done) aheadCount++;
         }
       } else {
-        // Fallback: compute from order of today's visits
         let idx = 1;
         for (const pid of db.order) {
           const p = db.patients[pid];
@@ -803,7 +902,6 @@ export default function PortalApp() {
             idx++;
           }
         }
-        // Count ahead
         if (queueNo) {
           let qi = 0;
           for (const pid of db.order) {
@@ -823,19 +921,38 @@ export default function PortalApp() {
     : aheadCount === 1 ? '1 patient ahead of you'
     : aheadCount + ' patients ahead of you';
 
-  // Active visit (today)
+  // Active visit (today) — find both pending and done
   let activeVisit = null;
+  let visitPending = false;
+  let visitDone = false;
   let canStartVisit = false;
   if (me) {
     const openToday = me.visits.filter(v => !v.done && v.date === today).sort((a, b) => (b.no || 0) - (a.no || 0))[0];
     const doneToday = me.visits.filter(v => v.done && v.date === today).sort((a, b) => (b.no || 0) - (a.no || 0))[0];
     activeVisit = openToday || doneToday || null;
+    visitPending = !!openToday;
+    visitDone = !openToday && !!doneToday;
     canStartVisit = !openToday;
   }
 
-  // Upcoming appointments (only when no visit today)
+  // Active visit doc flags
+  const activeC = activeVisit?.clinical || {};
+  const activeHasRx = !!(activeVisit?.done && (activeC.medicines || []).some(m => m.name));
+  const activeHasReceipt = !!(activeVisit?.done && num(activeC.amountPaid) > 0);
+  const activeDocs = activeC.documents || [];
+  const activeHasFiles = activeDocs.length > 0;
+  const activeHasAnyDoc = activeHasRx || activeHasReceipt || activeHasFiles;
+
+  // Show queue card only when visit is pending (not done)
+  const showQueueCard = visitPending && queueNo !== null;
+  // Checked-in strip only when pending
+  const showCheckedIn = visitPending;
+  // Done strip only when done
+  const showDoneStrip = visitDone;
+
+  // Upcoming appointments — show when no visit today OR visit is done (hide when pending)
   let upcoming = [];
-  if (me && !activeVisit) {
+  if (me && (!activeVisit || visitDone)) {
     for (const v of me.visits) {
       const na = v.clinical && v.clinical.nextAppointment;
       if (na && na >= today) {
@@ -855,35 +972,6 @@ export default function PortalApp() {
       if (a.dateLabel > b.dateLabel) return 1;
       return 0;
     });
-  }
-
-  // Past visits (for home view "My previous visits" section)
-  let pastVisits = [];
-  if (me) {
-    const payMap = { 'Fully Paid': ['#e3f5ec', '#12805a'], 'Partially paid': ['#fdf0dc', '#a9741a'], 'Not paid': ['#fdecea', '#c0392b'] };
-    pastVisits = me.visits
-      .filter(v => !activeVisit || v.visitId !== activeVisit.visitId)
-      .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : (b.no || 0) - (a.no || 0)))
-      .map(v => {
-        const c = v.clinical || {};
-        const cols = payMap[c.paymentStatus] || ['#eef4f3', '#8aa8a3'];
-        const bal = num(c.balanceDue);
-        const docs = (c.documents || []);
-        const hasRx = !!(v.done && (c.medicines || []).some(m => m.name));
-        const hasReceipt = !!(v.done && num(c.amountPaid) > 0);
-        const hasFiles = docs.length > 0;
-        return {
-          visitId: v.visitId, dateLabel: fmtDate(v.date),
-          treatmentLbl: treatmentLabel(c) || (v.done ? '—' : 'Awaiting consultation'),
-          status: v.done ? (c.paymentStatus || 'Completed') : (v.date === today ? 'In progress' : 'Awaiting doctor'),
-          stBg: v.done ? cols[0] : '#fdf0dc', stInk: v.done ? cols[1] : '#a9741a',
-          costLabel: v.done ? inr(num(c.treatmentCost)) : '',
-          balanceLabel: inr(bal),
-          showCharges: !!v.done, pendingVisit: !v.done, hasBalance: !!v.done && bal > 0,
-          hasRx, hasReceipt, hasFiles, filesCount: docs.length,
-          hasAnyDoc: hasRx || hasReceipt || hasFiles,
-        };
-      });
   }
 
   // Records view — all visits with lifetime stats
@@ -962,10 +1050,29 @@ export default function PortalApp() {
   const hasRegMatches = regMatches.length > 0 && !regAddingMember;
   const showRegFields = regMatches.length === 0 || regAddingMember || !!regPickedId;
 
-  // Detail visit for bottom sheet is resolved inline at render time.
-
   /* ── show bottom tabs when signed in and on home/records/family ── */
   const showTabs = signedIn && me && (view === 'home' || view === 'records' || view === 'family');
+
+  /* ── doc chip renderer (shared between Today done visit and History) ── */
+  const DocChips = ({ visitId, hasRx, hasReceipt, hasFiles, filesCount }) => (
+    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 11, paddingTop: 11, borderTop: '1px solid #f0f6f5' }}>
+      {hasRx && (
+        <button onClick={(e) => { e.stopPropagation(); handleOpenRx(visitId); }} style={{ padding: '8px 13px', borderRadius: 9, border: '1px solid #cfe3df', background: '#f2f9f8', color: '#0e756c', fontWeight: 700, fontSize: '12.5px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          <RxIcon /> Prescription
+        </button>
+      )}
+      {hasReceipt && (
+        <button onClick={(e) => { e.stopPropagation(); handleOpenReceipt(visitId); }} style={{ padding: '8px 13px', borderRadius: 9, border: '1px solid #cfe3df', background: '#f2f9f8', color: '#0e756c', fontWeight: 700, fontSize: '12.5px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          <ReceiptIcon /> Payment receipt
+        </button>
+      )}
+      {hasFiles && (
+        <button onClick={(e) => { e.stopPropagation(); setFilesVisit(visitId); }} style={{ padding: '8px 13px', borderRadius: 9, border: '1px solid #cfe3df', background: '#f2f9f8', color: '#0e756c', fontWeight: 700, fontSize: '12.5px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          <FolderIcon /> Documents ({filesCount})
+        </button>
+      )}
+    </div>
+  );
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
@@ -1012,7 +1119,6 @@ export default function PortalApp() {
                   </div>
                 ) : !otpStep ? (
                   <div style={{ marginTop: 20 }}>
-                    {/* ── Mobile OTP ── */}
                     <div style={{ textAlign: 'left' }}>
                       <label style={{ display: 'block', fontWeight: 700, fontSize: '13.5px', marginBottom: 7, color: '#0e3b39' }}>Mobile number</label>
                       <input
@@ -1031,14 +1137,12 @@ export default function PortalApp() {
                       </button>
                     </div>
 
-                    {/* ── Divider ── */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: 14, margin: '20px 0' }}>
                       <div style={{ flex: 1, height: 1, background: '#dbe6e4' }} />
                       <span style={{ fontSize: 12, fontWeight: 700, color: '#98b0ab', letterSpacing: '.08em' }}>OR</span>
                       <div style={{ flex: 1, height: 1, background: '#dbe6e4' }} />
                     </div>
 
-                    {/* ── Google SSO ── */}
                     <button onClick={handleGoogleSignIn} style={{
                       width: '100%', padding: 14, borderRadius: 12,
                       border: '1px solid #dbe6e4', background: '#fff', color: '#33534f',
@@ -1118,7 +1222,6 @@ export default function PortalApp() {
               </p>
 
               <div style={{ background: '#fff', border: '1px solid #dfece9', borderRadius: 18, padding: 20, marginTop: 16, display: 'flex', flexDirection: 'column', gap: 14 }}>
-                {/* Mobile */}
                 <div>
                   <label style={{ display: 'block', fontWeight: 700, fontSize: '13.5px', marginBottom: 7 }}>Mobile number <span style={{ color: '#ef5a3c' }}>*</span>{authedMobile && <span style={{ color: '#12a094', fontWeight: 600, fontSize: 11.5, marginLeft: 6 }}>verified</span>}</label>
                   <input
@@ -1129,7 +1232,6 @@ export default function PortalApp() {
                   />
                 </div>
 
-                {/* Who is visiting picker */}
                 {hasRegMatches && (
                   <div>
                     <p style={{ fontSize: '13.5px', fontWeight: 700, color: '#0e3b39', marginBottom: 4 }}>Who is visiting today?</p>
@@ -1162,7 +1264,6 @@ export default function PortalApp() {
                   </div>
                 )}
 
-                {/* Adding new member banner */}
                 {regAddingMember && regMatches.length > 0 && (
                   <div style={{ background: '#eef4fb', border: '1px solid #cfe0f0', borderRadius: 12, padding: '12px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
                     <span style={{ fontSize: '13.5px', color: '#2f5580' }}>Adding a new family member on this number.</span>
@@ -1176,7 +1277,6 @@ export default function PortalApp() {
                   </div>
                 )}
 
-                {/* Name / Age / Gender fields */}
                 {showRegFields && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                     <div>
@@ -1211,7 +1311,6 @@ export default function PortalApp() {
                   </div>
                 )}
 
-                {/* Add member link */}
                 {hasRegMatches && !regAddingMember && (
                   <button onClick={() => {
                     setRegAddingMember(true);
@@ -1223,10 +1322,8 @@ export default function PortalApp() {
                   </button>
                 )}
 
-                {/* Error */}
                 {regError && <p style={{ color: '#c0392b', fontSize: '13.5px', fontWeight: 600 }}>{regError}</p>}
 
-                {/* Submit */}
                 <button onClick={saveRegister} disabled={savingReg} style={{
                   width: '100%', padding: 15, borderRadius: 12, border: 0,
                   background: savingReg ? '#8aa8a3' : '#ef5a3c', color: '#fff',
@@ -1238,7 +1335,7 @@ export default function PortalApp() {
             </div>
           )}
 
-          {/* ═══ 3. HOME ═══ */}
+          {/* ═══ 3. HOME (Today tab) ═══ */}
           {view === 'home' && me && (
             <div>
               {/* Patient identity */}
@@ -1254,9 +1351,21 @@ export default function PortalApp() {
                 </span>
               </div>
 
-              {/* QUEUE CARD */}
-              {queueNo !== null && (
-                <div style={{ marginTop: 16, borderRadius: 20, background: 'linear-gradient(135deg,#0e756c,#0e3b39)', color: '#fff', padding: 22, position: 'relative', overflow: 'hidden' }}>
+              {/* CHECKED-IN STRIP (pending only) */}
+              {showCheckedIn && (
+                <div style={{ marginTop: 16, borderRadius: 16, background: '#e9f7f0', border: '1px solid #c6e8d6', padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <span style={{ flex: '0 0 auto', width: 34, height: 34, borderRadius: '50%', background: '#12805a', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <BigCheckIcon size={18} />
+                  </span>
+                  <span style={{ fontSize: 14, color: '#0e3b39', lineHeight: 1.35 }}>
+                    {"You're checked in — your queue number is below."}
+                  </span>
+                </div>
+              )}
+
+              {/* QUEUE CARD (pending only) */}
+              {showQueueCard && (
+                <div style={{ marginTop: 10, borderRadius: 20, background: 'linear-gradient(135deg,#0e756c,#0e3b39)', color: '#fff', padding: 22, position: 'relative', overflow: 'hidden' }}>
                   <div style={{ position: 'absolute', right: -40, top: -40, width: 150, height: 150, borderRadius: '50%', background: 'rgba(127,212,201,.14)' }} />
                   <div style={{ position: 'relative' }}>
                     <span style={{ fontSize: '11.5px', letterSpacing: '.16em', textTransform: 'uppercase', color: '#7fd4c9', fontWeight: 700 }}>Your queue number today</span>
@@ -1283,18 +1392,28 @@ export default function PortalApp() {
                 </div>
               )}
 
+              {/* VISIT DONE STRIP */}
+              {showDoneStrip && (
+                <div style={{ marginTop: 16, borderRadius: 16, background: '#e9f7f0', border: '1px solid #c6e8d6', padding: '15px 17px', display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <span style={{ flex: '0 0 auto', width: 38, height: 38, borderRadius: '50%', background: '#12805a', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <BigCheckIcon size={20} />
+                  </span>
+                  <span style={{ lineHeight: 1.3 }}>
+                    <span style={{ display: 'block', fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: 17, color: '#0e3b39' }}>Visit done</span>
+                    <span style={{ display: 'block', fontSize: 13, color: '#5c7a76' }}>Your consultation is complete. Details are below.</span>
+                  </span>
+                </div>
+              )}
+
               {/* ACTIVE VISIT */}
               {activeVisit && (
                 <div style={{ marginTop: 14, background: '#fff', border: '1px solid #dfece9', borderRadius: 18, padding: 18 }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
                     <h3 style={{ fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: '16.5px', color: '#0e3b39' }}>Today&apos;s visit</h3>
                     {(() => {
-                      const c = activeVisit.clinical || {};
-                      const payMap = { 'Fully Paid': ['#e3f5ec', '#12805a'], 'Partially paid': ['#fdf0dc', '#a9741a'], 'Not paid': ['#fdecea', '#c0392b'] };
-                      const cols = payMap[c.paymentStatus] || ['#eef4f3', '#8aa8a3'];
-                      const stLabel = activeVisit.done ? (c.paymentStatus || 'Completed') : 'Waiting for doctor';
-                      const stBg = activeVisit.done ? cols[0] : '#fdf0dc';
-                      const stInk = activeVisit.done ? cols[1] : '#a9741a';
+                      const stLabel = activeVisit.done ? 'Visit done' : 'Waiting for doctor';
+                      const stBg = activeVisit.done ? '#e3f5ec' : '#fdf0dc';
+                      const stInk = activeVisit.done ? '#12805a' : '#a9741a';
                       return <span style={{ padding: '4px 11px', borderRadius: 100, fontSize: '11.5px', fontWeight: 700, background: stBg, color: stInk }}>{stLabel}</span>;
                     })()}
                   </div>
@@ -1323,7 +1442,7 @@ export default function PortalApp() {
                       ) : (
                         <div>
                           <label style={{ display: 'block', fontWeight: 700, fontSize: '13.5px', marginBottom: 7 }}>
-                            {editingProblem ? 'Edit your message' : "What's troubling you?"}
+                            {editingProblem ? 'Edit your message' : "What's troubling you? (optional)"}
                           </label>
                           <textarea
                             value={problemDraft} onChange={e => setProblemDraft(e.target.value)}
@@ -1334,7 +1453,6 @@ export default function PortalApp() {
                             {editingProblem && (
                               <button onClick={() => {
                                 setEditingProblem(false);
-                                // Restore saved problem
                                 const openV = me.visits.filter(v => !v.done && v.date === today).sort((a, b) => (b.no || 0) - (a.no || 0))[0];
                                 if (openV && openV.clinical && openV.clinical.patientProblem) {
                                   setProblemDraft(openV.clinical.patientProblem);
@@ -1354,7 +1472,7 @@ export default function PortalApp() {
                               {savingProblem ? 'Saving...' : editingProblem ? 'Save changes' : 'Send to doctor'}
                             </button>
                           </div>
-                          <p style={{ color: '#98b0ab', fontSize: '12.5px', marginTop: 10, textAlign: 'center' }}>The doctor will see this before your consultation.</p>
+                          <p style={{ color: '#98b0ab', fontSize: '12.5px', marginTop: 10, textAlign: 'center' }}>Optional — the doctor will see this before your consultation.</p>
                         </div>
                       )}
                     </div>
@@ -1404,22 +1522,19 @@ export default function PortalApp() {
                             </span>
                           </div>
                         )}
+                        {/* Doc chips on done today visit */}
+                        {activeHasAnyDoc && (
+                          <DocChips visitId={activeVisit.visitId} hasRx={activeHasRx} hasReceipt={activeHasReceipt} hasFiles={activeHasFiles} filesCount={activeDocs.length} />
+                        )}
                       </div>
                     );
                   })()}
                 </div>
               )}
 
-              {/* NEW VISIT CTA */}
-              {canStartVisit && activeVisit === null && (
-                <button onClick={() => {
-                  setView('register');
-                  setIsAddingForFamily(false);
-                  setRegAddingMember(false);
-                  setRegPickedId(myPatientId);
-                  setRegError('');
-                  setReg({ mobile: authedMobile || me.mobile, name: me.name, age: me.age, gender: me.gender });
-                }} style={{
+              {/* NEW VISIT CTA — show when no pending visit, and (no visit at all OR visit done) */}
+              {canStartVisit && (
+                <button onClick={handleCheckinCta} style={{
                   width: '100%', marginTop: 14, padding: 15, borderRadius: 13, border: 0,
                   background: '#ef5a3c', color: '#fff', fontWeight: 700, fontSize: 16, cursor: 'pointer',
                   display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 9,
@@ -1428,8 +1543,8 @@ export default function PortalApp() {
                 </button>
               )}
 
-              {/* UPCOMING APPOINTMENTS (only when no visit today) */}
-              {upcoming.length > 0 && !activeVisit && (
+              {/* UPCOMING APPOINTMENTS — show when no visit today or visit done */}
+              {upcoming.length > 0 && (
                 <div style={{ marginTop: 22 }}>
                   <h3 style={{ fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: '16.5px', color: '#0e3b39', marginBottom: 10 }}>Upcoming appointments</h3>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -1453,8 +1568,8 @@ export default function PortalApp() {
                 </div>
               )}
 
-              {/* CHECKING IN FOR SOMEONE ELSE */}
-              {familyMembers.length > 1 && (
+              {/* CHECKING IN FOR SOMEONE ELSE — hide when visit is pending */}
+              {!visitPending && familyMembers.length > 1 && (
                 <button onClick={() => setMemberSheet(true)} style={{
                   width: '100%', marginTop: 12, padding: 13, borderRadius: 12,
                   border: '1px solid #dfece9', background: '#fff', color: '#0e756c',
@@ -1464,70 +1579,15 @@ export default function PortalApp() {
                   <PeopleAddIcon /> Checking in for someone else?
                 </button>
               )}
-
-              {/* PAST VISITS */}
-              {pastVisits.length > 0 && (
-                <div style={{ marginTop: 22 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-                    <h3 style={{ fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: '16.5px', color: '#0e3b39' }}>My previous visits</h3>
-                    <button onClick={goRecords} style={{ border: 0, background: 'none', color: '#0e756c', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>View all &rarr;</button>
-                  </div>
-                  <p style={{ fontSize: '12.5px', color: '#98b0ab', marginBottom: 10 }}>Tap a visit to see full details.</p>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    {pastVisits.slice(0, 3).map(v => (
-                      <div key={v.visitId} style={{ border: '1px solid #dfece9', borderRadius: 16, background: '#fff', padding: 14 }}>
-                        <div onClick={() => setDetailVisitId(v.visitId)} style={{ cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 6 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-                            <span style={{ fontFamily: 'ui-monospace,monospace', fontSize: 12, color: '#0e756c', fontWeight: 700 }}>{v.visitId}</span>
-                            <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                              <span style={{ flexShrink: 0, padding: '3px 10px', borderRadius: 100, fontSize: '11.5px', fontWeight: 700, background: v.stBg, color: v.stInk }}>{v.status}</span>
-                              <ChevronRight />
-                            </span>
-                          </div>
-                          <span style={{ fontSize: 15, fontWeight: 600, color: '#0e3b39' }}>{v.treatmentLbl}</span>
-                          <span style={{ fontSize: '12.5px', color: '#5c7a76' }}>
-                            {v.dateLabel}
-                            {v.showCharges && <span> &middot; Cost {v.costLabel}</span>}
-                            {v.pendingVisit && <span style={{ fontStyle: 'italic' }}> &middot; Not billed yet</span>}
-                            {v.hasBalance && <span style={{ color: '#c0392b', fontWeight: 700 }}> &middot; Due {v.balanceLabel}</span>}
-                          </span>
-                        </div>
-                        {v.hasAnyDoc && (
-                          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 11, paddingTop: 11, borderTop: '1px solid #f0f6f5' }}>
-                            {v.hasRx && (
-                              <button onClick={(e) => { e.stopPropagation(); setViewDoc({ visitId: v.visitId, kind: 'rx' }); }} style={{ padding: '8px 13px', borderRadius: 9, border: '1px solid #cfe3df', background: '#f2f9f8', color: '#0e756c', fontWeight: 700, fontSize: '12.5px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                                <RxIcon /> Prescription
-                              </button>
-                            )}
-                            {v.hasReceipt && (
-                              <button onClick={(e) => { e.stopPropagation(); setViewDoc({ visitId: v.visitId, kind: 'receipt' }); }} style={{ padding: '8px 13px', borderRadius: 9, border: '1px solid #cfe3df', background: '#f2f9f8', color: '#0e756c', fontWeight: 700, fontSize: '12.5px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                                <ReceiptIcon /> Payment receipt
-                              </button>
-                            )}
-                            {v.hasFiles && (
-                              <button onClick={(e) => { e.stopPropagation(); setFilesVisit(v.visitId); }} style={{ padding: '8px 13px', borderRadius: 9, border: '1px solid #cfe3df', background: '#f2f9f8', color: '#0e756c', fontWeight: 700, fontSize: '12.5px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                                <FolderIcon /> Documents ({v.filesCount})
-                              </button>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
             </div>
           )}
 
-          {/* ═══ 4. RECORDS ═══ */}
+          {/* ═══ 4. HISTORY (Records tab) ═══ */}
           {view === 'records' && me && (
             <div>
-              <button onClick={goHome} style={{ border: 0, background: 'none', color: '#0e756c', fontWeight: 700, fontSize: 14, cursor: 'pointer', padding: 0, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
-                <BackArrow /> Back to today
-              </button>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
                 <div style={{ minWidth: 0 }}>
-                  <h1 style={{ fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: 24, color: '#0e3b39' }}>Records</h1>
+                  <h1 style={{ fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: 24, color: '#0e3b39' }}>Visit history</h1>
                   <p style={{ color: '#5c7a76', fontSize: '14.5px', marginTop: 2 }}>
                     {me.name} &middot; <span style={{ fontFamily: 'ui-monospace,monospace', color: '#0e756c', fontWeight: 600 }}>{myPatientId}</span>
                   </p>
@@ -1550,17 +1610,15 @@ export default function PortalApp() {
                 </div>
               </div>
 
-              {/* Pending alert */}
               {totalPending > 0 && (
                 <div style={{ marginTop: 12, background: '#fdf6f4', border: '1px solid #f6d3c8', borderRadius: 13, padding: '12px 14px', fontSize: '13.5px', color: '#b0442a' }}>
                   You have <strong>{inr(totalPending)}</strong> pending across your visits. You can settle this at the clinic reception.
                 </div>
               )}
 
-              {/* Visit history */}
               {allVisits.length > 0 && (
                 <div style={{ marginTop: 20 }}>
-                  <h3 style={{ fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: '16.5px', color: '#0e3b39', marginBottom: 4 }}>Visit history</h3>
+                  <h3 style={{ fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: '16.5px', color: '#0e3b39', marginBottom: 4 }}>All visits</h3>
                   <p style={{ fontSize: '12.5px', color: '#98b0ab', marginBottom: 10 }}>Newest first &middot; tap any visit for full details.</p>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                     {allVisits.map(v => (
@@ -1582,23 +1640,7 @@ export default function PortalApp() {
                           </span>
                         </div>
                         {v.hasAnyDoc && (
-                          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 11, paddingTop: 11, borderTop: '1px solid #f0f6f5' }}>
-                            {v.hasRx && (
-                              <button onClick={(e) => { e.stopPropagation(); setViewDoc({ visitId: v.visitId, kind: 'rx' }); }} style={{ padding: '8px 13px', borderRadius: 9, border: '1px solid #cfe3df', background: '#f2f9f8', color: '#0e756c', fontWeight: 700, fontSize: '12.5px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                                <RxIcon /> Prescription
-                              </button>
-                            )}
-                            {v.hasReceipt && (
-                              <button onClick={(e) => { e.stopPropagation(); setViewDoc({ visitId: v.visitId, kind: 'receipt' }); }} style={{ padding: '8px 13px', borderRadius: 9, border: '1px solid #cfe3df', background: '#f2f9f8', color: '#0e756c', fontWeight: 700, fontSize: '12.5px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                                <ReceiptIcon /> Payment receipt
-                              </button>
-                            )}
-                            {v.hasFiles && (
-                              <button onClick={(e) => { e.stopPropagation(); setFilesVisit(v.visitId); }} style={{ padding: '8px 13px', borderRadius: 9, border: '1px solid #cfe3df', background: '#f2f9f8', color: '#0e756c', fontWeight: 700, fontSize: '12.5px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                                <FolderIcon /> Documents ({v.filesCount})
-                              </button>
-                            )}
-                          </div>
+                          <DocChips visitId={v.visitId} hasRx={v.hasRx} hasReceipt={v.hasReceipt} hasFiles={v.hasFiles} filesCount={v.filesCount} />
                         )}
                       </div>
                     ))}
@@ -1617,9 +1659,6 @@ export default function PortalApp() {
           {/* ═══ 5. FAMILY ═══ */}
           {view === 'family' && me && (
             <div>
-              <button onClick={goHome} style={{ border: 0, background: 'none', color: '#0e756c', fontWeight: 700, fontSize: 14, cursor: 'pointer', padding: 0, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
-                <BackArrow /> Back to today
-              </button>
               <h1 style={{ fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: 24, color: '#0e3b39' }}>Family</h1>
               <p style={{ color: '#5c7a76', fontSize: '14.5px', marginTop: 2 }}>Everyone registered on this mobile number. Tap anyone to view their visit history.</p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 16 }}>
@@ -1661,6 +1700,34 @@ export default function PortalApp() {
               }}>
                 <PlusIcon /> Add a new family member
               </button>
+            </div>
+          )}
+
+          {/* ═══ CONFIRM WHO SHEET ═══ */}
+          {confirmWho && me && (
+            <div onClick={() => setConfirmWho(false)} style={{ position: 'fixed', inset: 0, zIndex: 92, background: 'rgba(14,59,57,.55)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+              <div onClick={e => e.stopPropagation()} style={{ background: '#fff', borderRadius: '22px 22px 0 0', width: '100%', maxWidth: 460, padding: '22px 20px 26px' }}>
+                <h3 style={{ fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: '17.5px', color: '#0e3b39' }}>Confirm who is visiting</h3>
+                <p style={{ color: '#5c7a76', fontSize: 14, marginTop: 5, textWrap: 'pretty' }}>This mobile number has more than one patient registered.</p>
+                <div style={{ marginTop: 14, display: 'flex', alignItems: 'center', gap: 12, border: '1px solid #cfe3df', background: '#f2f9f8', borderRadius: 14, padding: '13px 15px' }}>
+                  <span style={{ flex: '0 0 auto', width: 40, height: 40, borderRadius: '50%', background: '#12a094', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: 16 }}>
+                    {(me.name || '?').trim().charAt(0).toUpperCase()}
+                  </span>
+                  <span style={{ lineHeight: 1.25, minWidth: 0 }}>
+                    <span style={{ display: 'block', fontWeight: 700, color: '#0e3b39', fontSize: '15.5px' }}>{me.name}</span>
+                    <span style={{ display: 'block', fontSize: '12.5px', color: '#5c7a76' }}>{(me.age || '?') + ' yrs · ' + (me.gender || '—')}</span>
+                  </span>
+                </div>
+                <button onClick={doCheckinForMe} style={{ width: '100%', marginTop: 16, padding: 14, borderRadius: 12, border: 0, background: '#ef5a3c', color: '#fff', fontWeight: 700, fontSize: '15.5px', cursor: 'pointer' }}>
+                  Yes, check in {me.name}
+                </button>
+                <button onClick={() => { setConfirmWho(false); setMemberSheet(true); }} style={{ width: '100%', marginTop: 9, padding: 13, borderRadius: 12, border: '1px solid #dfece9', background: '#fff', color: '#0e756c', fontWeight: 700, fontSize: '14.5px', cursor: 'pointer' }}>
+                  Choose someone else
+                </button>
+                <button onClick={() => setConfirmWho(false)} style={{ width: '100%', marginTop: 6, padding: 11, borderRadius: 12, border: 0, background: 'none', color: '#8aa8a3', fontWeight: 700, fontSize: '13.5px', cursor: 'pointer' }}>
+                  Cancel
+                </button>
+              </div>
             </div>
           )}
 
@@ -1778,20 +1845,58 @@ export default function PortalApp() {
           };
           const isRx = viewDoc.kind === 'rx';
           const title = isRx ? 'Prescription' : 'Payment Receipt';
-          const rx = isRx ? buildRx(c, meta, CLINIC_NAME) : null;
-          const receipt = !isRx ? buildReceipt(c, meta) : null;
+          const useDocxView = isRx ? hasDocxRxTemplate : hasDocxReceiptTemplate;
+          const rx = (!useDocxView && isRx) ? buildRx(c, meta, CLINIC_NAME) : null;
+          const receipt = (!useDocxView && !isRx) ? buildReceipt(c, meta) : null;
           return (
-            <div id="rx-overlay" onClick={() => setViewDoc(null)} style={{ position: 'fixed', inset: 0, zIndex: 95, background: 'rgba(14,59,57,.6)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 14, overflow: 'auto' }}>
+            <div id="rx-overlay" onClick={() => { setViewDoc(null); setDocxContent(null); }} style={{ position: 'fixed', inset: 0, zIndex: 95, background: 'rgba(14,59,57,.6)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 14, overflow: 'auto' }}>
               <div id="rx-sheet" onClick={e => e.stopPropagation()} style={{ background: '#fff', borderRadius: 18, width: '100%', maxWidth: 560, overflow: 'hidden', margin: 'auto' }}>
                 <div id="rx-chrome" style={{ background: '#0e3b39', color: '#fff', padding: '14px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
                   <span style={{ fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: 16 }}>{title}</span>
                   <div style={{ display: 'flex', gap: 8 }}>
-                    <button onClick={() => { try { window.print(); } catch {} }} style={{ padding: '8px 14px', borderRadius: 9, border: 0, background: '#12a094', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Save PDF</button>
-                    <button onClick={() => setViewDoc(null)} style={{ width: 32, height: 32, borderRadius: 9, border: 0, background: 'rgba(255,255,255,.15)', color: '#fff', fontSize: 15, cursor: 'pointer' }}>{'✕'}</button>
+                    {useDocxView && docxContent?.url && (
+                      docxContent.format === 'html' ? (
+                        <button onClick={() => {
+                          const w = window.open(docxContent.url, '_blank');
+                          if (w) setTimeout(() => { try { w.print(); } catch {} }, 800);
+                        }} style={{ padding: '8px 14px', borderRadius: 9, border: 0, background: '#12a094', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Save PDF</button>
+                      ) : (
+                        <a href={docxContent.url} target="_blank" rel="noopener noreferrer" style={{ padding: '8px 14px', borderRadius: 9, border: 0, background: '#12a094', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer', textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}>Download</a>
+                      )
+                    )}
+                    {!useDocxView && <button onClick={() => { try { window.print(); } catch {} }} style={{ padding: '8px 14px', borderRadius: 9, border: 0, background: '#12a094', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Save PDF</button>}
+                    <button onClick={() => { setViewDoc(null); setDocxContent(null); }} style={{ width: 32, height: 32, borderRadius: 9, border: 0, background: 'rgba(255,255,255,.15)', color: '#fff', fontSize: 15, cursor: 'pointer' }}>{'✕'}</button>
                   </div>
                 </div>
 
-                {isRx && rx && (
+                {/* DOCX template view */}
+                {useDocxView && (
+                  <div style={{ minHeight: 200 }}>
+                    {docxLoading && (
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '48px 20px', gap: 14 }}>
+                        <div style={{ width: 36, height: 36, border: '3px solid #d6e7e3', borderTopColor: '#12a094', borderRadius: '50%', animation: 'spin .7s linear infinite' }} />
+                        <span style={{ fontSize: 14, color: '#5c7a76', fontWeight: 600 }}>Generating {isRx ? 'prescription' : 'receipt'}...</span>
+                      </div>
+                    )}
+                    {!docxLoading && docxContent?.format === 'html' && docxContent.url && (
+                      <iframe src={docxContent.url} title={title} style={{ width: '100%', minHeight: 500, border: 0 }} />
+                    )}
+                    {!docxLoading && docxContent?.format === 'docx' && docxContent.url && (
+                      <div style={{ padding: '40px 20px', textAlign: 'center' }}>
+                        <p style={{ fontSize: 15, color: '#33534f', marginBottom: 16 }}>Your {isRx ? 'prescription' : 'receipt'} is ready.</p>
+                        <a href={docxContent.url} target="_blank" rel="noopener noreferrer" style={{ padding: '12px 24px', borderRadius: 11, border: 0, background: '#0e756c', color: '#fff', fontWeight: 700, fontSize: 15, cursor: 'pointer', textDecoration: 'none' }}>Download DOCX</a>
+                      </div>
+                    )}
+                    {!docxLoading && !docxContent && (
+                      <div style={{ padding: '40px 20px', textAlign: 'center' }}>
+                        <p style={{ fontSize: 14, color: '#c0392b', fontWeight: 600 }}>Could not generate the document. Please try again later.</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Standard prescription view (no DOCX template) */}
+                {!useDocxView && isRx && rx && (
                   <div style={{ padding: '20px 20px 26px' }}>
                     <div style={{ borderBottom: '2px solid #0e756c', paddingBottom: 12 }}>
                       <span style={{ display: 'block', fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: 18, color: '#0e3b39' }}>{CLINIC_NAME}</span>
@@ -1826,7 +1931,8 @@ export default function PortalApp() {
                   </div>
                 )}
 
-                {!isRx && receipt && (
+                {/* Standard receipt view (no DOCX template) */}
+                {!useDocxView && !isRx && receipt && (
                   <div style={{ padding: '20px 20px 26px' }}>
                     <div style={{ borderBottom: '2px solid #0e756c', paddingBottom: 12 }}>
                       <span style={{ display: 'block', fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: 18, color: '#0e3b39' }}>{CLINIC_NAME}</span>
@@ -1910,7 +2016,7 @@ export default function PortalApp() {
           );
         })()}
 
-        {/* ═══ BOTTOM TABS ═══ */}
+        {/* ═══ BOTTOM TABS: Today / History / Family ═══ */}
         {showTabs && (
           <div>
             <div style={{ height: 76 }} />
@@ -1929,6 +2035,15 @@ export default function PortalApp() {
                   display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
                 }}>
                   <HomeIcon /> Today
+                </button>
+                <button onClick={goHistory} style={{
+                  flex: 1, padding: 10, borderRadius: 12, border: 0,
+                  background: view === 'records' ? '#e6f4f2' : 'transparent',
+                  color: view === 'records' ? '#0e756c' : '#8aa8a3',
+                  fontWeight: 700, fontSize: 12, cursor: 'pointer',
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
+                }}>
+                  <HistoryIcon /> History
                 </button>
                 <button onClick={goFamily} style={{
                   flex: 1, padding: 10, borderRadius: 12, border: 0,
