@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { buildRx, buildReceipt, normalizeClinical } from './Clinical';
+import { buildRx, buildReceipt, normalizeClinical, ReceiptSheet } from './Clinical';
 import { getDocumentUrl, generatePrescriptionPdf } from '../api';
 
 function num(x) { const n = parseFloat(x); return isNaN(n) ? 0 : n; }
@@ -113,10 +113,11 @@ function PrescriptionSheet({ rx, onClose, clinicName, clinicAddress, doctorName,
         <div id="rx-chrome" style={{ background: '#0e3b39', color: '#fff', padding: '14px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
           <span style={{ fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: 16 }}>E-Prescription</span>
           <div style={{ display: 'flex', gap: 8 }}>
-            {hasDocxTemplate && docxUrl && (
-              <a href={docxUrl} target="_blank" rel="noopener noreferrer" style={{ padding: '8px 15px', borderRadius: 9, border: 0, background: '#12a094', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer', textDecoration: 'none' }}>
-                {docxFormat === 'docx' ? 'Download' : 'Print / Save PDF'}
-              </a>
+            {hasDocxTemplate && docxUrl && docxFormat === 'docx' && (
+              <a href={docxUrl} target="_blank" rel="noopener noreferrer" style={{ padding: '8px 15px', borderRadius: 9, border: 0, background: '#12a094', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer', textDecoration: 'none' }}>Download</a>
+            )}
+            {hasDocxTemplate && docxUrl && docxFormat !== 'docx' && (
+              <button onClick={() => window.open(docxUrl + '#print', '_blank')} style={{ padding: '8px 15px', borderRadius: 9, border: 0, background: '#12a094', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Print / Save PDF</button>
             )}
             {!hasDocxTemplate && <button onClick={() => window.print()} style={{ padding: '8px 15px', borderRadius: 9, border: 0, background: '#12a094', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Print / Save PDF</button>}
             <button onClick={onClose} style={{ width: 32, height: 32, borderRadius: 8, border: 0, background: 'rgba(255,255,255,.15)', color: '#fff', fontSize: 15, cursor: 'pointer' }}>✕</button>
@@ -139,7 +140,7 @@ function PrescriptionSheet({ rx, onClose, clinicName, clinicAddress, doctorName,
               </div>
             )}
             {docxUrl && (docxFormat === 'pdf' || docxFormat === 'html') && (
-              <iframe src={docxUrl} style={{ width: '100%', height: 700, border: 'none' }} title="Prescription" />
+              <iframe id="rx-iframe" src={docxUrl} style={{ width: '100%', height: 700, border: 'none' }} title="Prescription" />
             )}
             {docxUrl && docxFormat === 'docx' && (
               <div style={{ padding: 40, textAlign: 'center' }}>
@@ -248,66 +249,7 @@ function PrescriptionSheet({ rx, onClose, clinicName, clinicAddress, doctorName,
   );
 }
 
-function ReceiptSheet({ receipt, onClose, clinicName, clinicAddress }) {
-  return (
-    <div id="rx-overlay" onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 90, background: 'rgba(14,59,57,.6)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 20, overflow: 'auto' }}>
-      <div id="rx-sheet" onClick={(e) => e.stopPropagation()} style={{ background: '#fff', borderRadius: 18, width: '100%', maxWidth: 560, overflow: 'hidden', margin: 'auto' }}>
-        <div id="rx-chrome" style={{ background: '#0e3b39', color: '#fff', padding: '14px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-          <span style={{ fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: 16 }}>Payment Receipt</span>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={() => window.print()} style={{ padding: '8px 15px', borderRadius: 9, border: 0, background: '#12a094', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Print / Save PDF</button>
-            <button onClick={onClose} style={{ width: 32, height: 32, borderRadius: 8, border: 0, background: 'rgba(255,255,255,.15)', color: '#fff', fontSize: 15, cursor: 'pointer' }}>✕</button>
-          </div>
-        </div>
-        <div style={{ padding: '26px 28px 30px' }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, borderBottom: '2px solid #0e756c', paddingBottom: 14, flexWrap: 'wrap' }}>
-            <div>
-              <span style={{ display: 'block', fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: 19, color: '#0e3b39' }}>{clinicName}</span>
-              <span style={{ display: 'block', fontSize: 12, color: '#5c7a76', marginTop: 2 }}>{clinicAddress}</span>
-            </div>
-            <span style={{ flexShrink: 0, textAlign: 'right', fontSize: 12, color: '#5c7a76', lineHeight: 1.5 }}>
-              <span style={{ display: 'block' }}>Date: <strong style={{ color: '#0e3b39' }}>{receipt.dateLabel}</strong></span>
-              <span style={{ display: 'block', fontFamily: 'ui-monospace,monospace' }}>{receipt.receiptNo}</span>
-            </span>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: '8px 22px', marginTop: 14, fontSize: 13.5 }}>
-            <span style={{ color: '#5c7a76' }}>Received from: <strong style={{ color: '#0e3b39' }}>{receipt.name}</strong></span>
-            <span style={{ color: '#5c7a76' }}>Mobile: <strong style={{ color: '#0e3b39' }}>{receipt.mobile}</strong></span>
-            <span style={{ color: '#5c7a76' }}>Patient ID: <strong style={{ color: '#0e3b39' }}>{receipt.patientId}</strong></span>
-            <span style={{ color: '#5c7a76' }}>Mode: <strong style={{ color: '#0e3b39' }}>{receipt.mode}</strong></span>
-          </div>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5, marginTop: 18 }}>
-            <thead><tr style={{ textAlign: 'left', color: '#7a9994', fontSize: 11, letterSpacing: '.05em', textTransform: 'uppercase', borderBottom: '1px solid #e2efec' }}>
-              <th style={{ padding: '8px 6px', fontWeight: 700 }}>#</th><th style={{ padding: '8px 6px', fontWeight: 700 }}>Particulars</th><th style={{ padding: '8px 6px', fontWeight: 700, textAlign: 'right' }}>Amount</th>
-            </tr></thead>
-            <tbody>
-              {receipt.lines.map((rl) => (
-                <tr key={rl.sn} style={{ borderBottom: '1px solid #f0f6f5' }}>
-                  <td style={{ padding: '10px 6px', color: '#8aa8a3' }}>{rl.sn}</td>
-                  <td style={{ padding: '10px 6px', color: '#0e3b39' }}>{rl.label}</td>
-                  <td style={{ padding: '10px 6px', color: '#33534f', textAlign: 'right' }}>{rl.amountLabel}</td>
-                </tr>
-              ))}
-              <tr>
-                <td style={{ padding: '12px 6px' }}></td>
-                <td style={{ padding: '12px 6px', fontWeight: 700, color: '#0e3b39' }}>Total received</td>
-                <td style={{ padding: '12px 6px', textAlign: 'right', fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: 18, color: '#12805a' }}>{receipt.totalLabel}</td>
-              </tr>
-            </tbody>
-          </table>
-          <div style={{ marginTop: 6, padding: '13px 15px', borderRadius: 12, background: '#f7fbfa', border: '1px solid #e2efec', display: 'flex', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap', fontSize: 13.5 }}>
-            <span style={{ color: '#5c7a76' }}>Payment status: <strong style={{ color: '#0e3b39' }}>{receipt.status}</strong></span>
-            <span style={{ color: '#5c7a76' }}>Balance due: <strong style={{ color: receipt.balanceColor }}>{receipt.balanceLabel}</strong></span>
-          </div>
-          <div style={{ marginTop: 30, display: 'flex', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-            <span style={{ fontSize: 11.5, color: '#98b0ab', maxWidth: 230 }}>This is a computer-generated receipt for the amount received.</span>
-            <span style={{ textAlign: 'center', fontSize: 12.5, color: '#5c7a76', borderTop: '1px solid #cfe3df', paddingTop: 7, minWidth: 180 }}>For {clinicName}</span>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
+/* ReceiptSheet is imported from Clinical.jsx */
 
 function FilesPopup({ filesVisit, patient, onClose }) {
   const nc = normalizeClinical(filesVisit.clinical || {});
@@ -362,7 +304,7 @@ function FilesPopup({ filesVisit, patient, onClose }) {
   );
 }
 
-export default function PatientDetail({ patient, patientId, onGoBack, clinicName, clinicAddress, doctorName, doctorQualification, rxTemplateUrl, hasDocxTemplate }) {
+export default function PatientDetail({ patient, patientId, onGoBack, clinicName, clinicAddress, doctorName, doctorQualification, rxTemplateUrl, hasDocxTemplate, hasReceiptTemplate }) {
   const [detailVisit, setDetailVisit] = useState(null);
   const [viewDoc, setViewDoc] = useState(null);
   const [filesVisit, setFilesVisit] = useState(null);
@@ -412,7 +354,7 @@ export default function PatientDetail({ patient, patientId, onGoBack, clinicName
     setViewDoc({ kind: 'rx', data: buildRx(vc.nc, meta) });
   }
   function openReceipt(vc) {
-    const meta = { dateLabel: vc.dateLabel, name: p.name, mobile: p.mobile, patientId, visitId: vc.visitId };
+    const meta = { dateLabel: vc.dateLabel, name: p.name, mobile: p.mobile, patientId, visitId: vc.visitId, ageGender: `${p.age || ''}/${p.gender || ''}` };
     setViewDoc({ kind: 'receipt', data: buildReceipt(vc.nc, meta) });
   }
 
@@ -562,7 +504,7 @@ export default function PatientDetail({ patient, patientId, onGoBack, clinicName
       {filesVisit && <FilesPopup filesVisit={filesVisit} patient={p} onClose={() => setFilesVisit(null)} />}
 
       {viewDoc && viewDoc.kind === 'rx' && <PrescriptionSheet rx={viewDoc.data} onClose={() => setViewDoc(null)} clinicName={cn} clinicAddress={ca} doctorName={doctorName} doctorQualification={doctorQualification} rxTemplateUrl={rxTemplateUrl} hasDocxTemplate={hasDocxTemplate} />}
-      {viewDoc && viewDoc.kind === 'receipt' && <ReceiptSheet receipt={viewDoc.data} onClose={() => setViewDoc(null)} clinicName={cn} clinicAddress={ca} />}
+      {viewDoc && viewDoc.kind === 'receipt' && <ReceiptSheet receipt={viewDoc.data} onClose={() => setViewDoc(null)} clinicName={cn} clinicAddress={ca} doctorName={doctorName} hasReceiptTemplate={hasReceiptTemplate} />}
     </div>
   );
 }

@@ -84,6 +84,10 @@ export function savePatientProblem({ patientId, visitId, patientProblem }) {
   return post({ action: 'savePatientProblem', patientId, visitId, patientProblem });
 }
 
+export function savePayment({ visitId, patientId, patientName, mobile, date, treatmentCost, amountPaid, balanceDue, paymentMode, paySplits, clinicId }) {
+  return post({ action: 'savePayment', visitId, patientId, patientName, mobile, date, treatmentCost, amountPaid, balanceDue, paymentMode, paySplits, clinicId });
+}
+
 // ── AWS Backend API ──
 
 const AWS_URL = import.meta.env.VITE_AWS_API_URL;
@@ -146,5 +150,38 @@ export async function generatePrescriptionPdf(visitData) {
     body: JSON.stringify({ clinicId: CLINIC_ID, type: 'prescription', visitData }),
   });
   return json;
+}
+
+export async function getReceiptTemplateUrl() {
+  if (!AWS_URL || !CLINIC_ID) return null;
+  try {
+    const json = await awsJson(`${AWS_URL}/org/${CLINIC_ID}/receipt-template`);
+    return json.url;
+  } catch { return null; }
+}
+
+export async function uploadReceiptTemplate(file) {
+  if (!AWS_URL || !CLINIC_ID) throw new Error('AWS not configured');
+  const json = await awsJson(`${AWS_URL}/org/${CLINIC_ID}/receipt-template`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fileType: file.type }),
+  });
+  await uploadToS3(json.uploadUrl, file);
+  return json;
+}
+
+export async function generateReceiptPdf(visitData) {
+  if (!AWS_URL || !CLINIC_ID) throw new Error('AWS not configured');
+  const json = await awsJson(`${AWS_URL}/generate-pdf`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ clinicId: CLINIC_ID, type: 'receipt', visitData }),
+  });
+  return json;
+}
+
+export function getClinicId() {
+  return CLINIC_ID || '';
 }
 

@@ -4,7 +4,7 @@ import {
   MEDICINE_FORMS, FOOD_OPTIONS, DOC_KINDS, SPLIT_CATEGORIES,
 } from '../options';
 import { TOUCH_BTN, FLUID_GRID_2COL } from '../styles';
-import { getUploadUrl, uploadToS3, getDocumentUrl, generatePrescriptionPdf } from '../api';
+import { getUploadUrl, uploadToS3, getDocumentUrl, generatePrescriptionPdf, generateReceiptPdf, savePayment, getClinicId } from '../api';
 
 const fieldStyle = {
   width: '100%', minHeight: 44, padding: '12px 14px', border: '1px solid #d6e7e3', borderRadius: 10,
@@ -201,13 +201,23 @@ function linesFor(cf) {
 function buildReceipt(cf, meta) {
   const lines = linesFor(cf) || [];
   const total = lines.reduce((s, l) => s + l.amount, 0);
-  const bal = num(cf.balanceDue);
+  const bal = num(cf.balanceDue !== undefined && cf.balanceDue !== '' ? cf.balanceDue : (num(cf.treatmentCost) - num(cf.amountPaid)));
+  const clinicId = getClinicId();
+  const receiptNo = clinicId ? (clinicId + '_' + (meta.visitId || '')) : ('R-' + (meta.visitId || ''));
+  const paySplits = (cf.paySplits || []).filter(sp => splitLabel(sp) && num(sp.amount) > 0)
+    .map(sp => ({ category: sp.category, custom: sp.custom || '', amount: num(sp.amount) }));
+  if (!paySplits.length && lines.length) {
+    lines.forEach(l => paySplits.push({ category: l.label, custom: '', amount: l.amount }));
+  }
   return {
     lines: lines.map((l, i) => ({ sn: i + 1, label: l.label, amountLabel: inr(l.amount) })),
     totalLabel: inr(total), balanceLabel: inr(bal), balanceColor: bal > 0 ? '#c0392b' : '#12805a',
     mode: cf.paymentMode || '—', status: cf.paymentStatus || '—',
-    receiptNo: 'R-' + (meta.visitId || ''), dateLabel: meta.dateLabel,
+    receiptNo, dateLabel: meta.dateLabel,
     name: meta.name, mobile: meta.mobile, patientId: meta.patientId,
+    visitId: meta.visitId, ageSex: meta.ageGender || '',
+    treatmentCost: String(num(cf.treatmentCost)), amountPaid: String(num(cf.amountPaid)),
+    balanceDue: String(bal), paySplits,
   };
 }
 
@@ -244,10 +254,11 @@ function PrescriptionSheet({ rx, onClose, clinicName, clinicAddress, doctorName,
         <div id="rx-chrome" style={{ background: '#0e3b39', color: '#fff', padding: '14px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
           <span style={{ fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: 16 }}>E-Prescription</span>
           <div style={{ display: 'flex', gap: 8 }}>
-            {hasDocxTemplate && docxUrl && (
-              <a href={docxUrl} target="_blank" rel="noopener noreferrer" style={{ padding: '8px 15px', borderRadius: 9, border: 0, background: '#12a094', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer', textDecoration: 'none' }}>
-                {docxFormat === 'docx' ? 'Download' : 'Print / Save PDF'}
-              </a>
+            {hasDocxTemplate && docxUrl && docxFormat === 'docx' && (
+              <a href={docxUrl} target="_blank" rel="noopener noreferrer" style={{ padding: '8px 15px', borderRadius: 9, border: 0, background: '#12a094', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer', textDecoration: 'none' }}>Download</a>
+            )}
+            {hasDocxTemplate && docxUrl && docxFormat !== 'docx' && (
+              <button onClick={() => window.open(docxUrl + '#print', '_blank')} style={{ padding: '8px 15px', borderRadius: 9, border: 0, background: '#12a094', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Print / Save PDF</button>
             )}
             {!hasDocxTemplate && <button onClick={() => window.print()} style={{ padding: '8px 15px', borderRadius: 9, border: 0, background: '#12a094', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Print / Save PDF</button>}
             <button onClick={onClose} style={{ width: 32, height: 32, borderRadius: 8, border: 0, background: 'rgba(255,255,255,.15)', color: '#fff', fontSize: 15, cursor: 'pointer' }}>✕</button>
@@ -271,7 +282,7 @@ function PrescriptionSheet({ rx, onClose, clinicName, clinicAddress, doctorName,
               </div>
             )}
             {docxUrl && (docxFormat === 'pdf' || docxFormat === 'html') && (
-              <iframe src={docxUrl} style={{ width: '100%', height: 700, border: 'none' }} title="Prescription" />
+              <iframe id="rx-iframe" src={docxUrl} style={{ width: '100%', height: 700, border: 'none' }} title="Prescription" />
             )}
             {docxUrl && docxFormat === 'docx' && (
               <div style={{ padding: 40, textAlign: 'center' }}>
@@ -382,17 +393,95 @@ function PrescriptionSheet({ rx, onClose, clinicName, clinicAddress, doctorName,
 }
 
 /* ── Print-ready Receipt sheet ── */
-function ReceiptSheet({ receipt, onClose, clinicName, clinicAddress }) {
+function ReceiptSheet({ receipt, onClose, clinicName, clinicAddress, doctorName, hasReceiptTemplate, onPaymentSaved }) {
+  const [docxUrl, setDocxUrl] = useState(null);
+  const [docxLoading, setDocxLoading] = useState(false);
+  const [docxError, setDocxError] = useState(null);
+  const [docxFormat, setDocxFormat] = useState(null);
+  const [paymentSaving, setPaymentSaving] = useState(false);
+  const [paymentSaved, setPaymentSaved] = useState(false);
+
+  useEffect(() => {
+    if (!hasReceiptTemplate) return;
+    setDocxLoading(true);
+    const visitData = {
+      patientName: receipt.name, mobile: receipt.mobile, date: receipt.dateLabel,
+      age_sex: receipt.ageSex || '', doctorName: doctorName || '',
+      visitId: receipt.visitId, receiptNumber: receipt.receiptNo,
+      treatmentCost: receipt.treatmentCost, amountPaid: receipt.amountPaid,
+      balanceDue: receipt.balanceDue, paymentMode: receipt.mode,
+      paySplits: receipt.paySplits || [],
+    };
+    generateReceiptPdf(visitData)
+      .then(res => { setDocxUrl(res.url); setDocxFormat(res.format); })
+      .catch(err => setDocxError(err.message))
+      .finally(() => setDocxLoading(false));
+  }, [hasReceiptTemplate]);
+
+  function handleSavePayment() {
+    setPaymentSaving(true);
+    savePayment({
+      visitId: receipt.visitId, patientId: receipt.patientId, patientName: receipt.name,
+      mobile: receipt.mobile, date: receipt.dateLabel, treatmentCost: receipt.treatmentCost,
+      amountPaid: receipt.amountPaid, balanceDue: receipt.balanceDue, paymentMode: receipt.mode,
+      paySplits: receipt.paySplits || [], clinicId: getClinicId(),
+    }).then(() => { setPaymentSaved(true); if (onPaymentSaved) onPaymentSaved(); })
+      .catch(() => {})
+      .finally(() => setPaymentSaving(false));
+  }
+
   return (
     <div id="rx-overlay" onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 90, background: 'rgba(14,59,57,.6)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 20, overflow: 'auto' }}>
-      <div id="rx-sheet" onClick={(e) => e.stopPropagation()} style={{ background: '#fff', borderRadius: 18, width: '100%', maxWidth: 560, overflow: 'hidden', margin: 'auto' }}>
+      <div id="rx-sheet" onClick={(e) => e.stopPropagation()} style={{ background: '#fff', borderRadius: 18, width: '100%', maxWidth: hasReceiptTemplate ? 720 : 560, overflow: 'hidden', margin: 'auto' }}>
         <div id="rx-chrome" style={{ background: '#0e3b39', color: '#fff', padding: '14px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
           <span style={{ fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: 16 }}>Payment Receipt</span>
           <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={() => window.print()} style={{ padding: '8px 15px', borderRadius: 9, border: 0, background: '#12a094', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Print / Save PDF</button>
+            {!paymentSaved && (
+              <button onClick={handleSavePayment} disabled={paymentSaving} style={{ padding: '8px 15px', borderRadius: 9, border: '1px solid rgba(255,255,255,.3)', background: 'transparent', color: '#fff', fontWeight: 700, fontSize: 13, cursor: paymentSaving ? 'not-allowed' : 'pointer', opacity: paymentSaving ? 0.6 : 1 }}>
+                {paymentSaving ? 'Saving...' : 'Save Payment'}
+              </button>
+            )}
+            {paymentSaved && <span style={{ padding: '8px 12px', fontSize: 13, color: '#a8f0d0', fontWeight: 600 }}>Saved</span>}
+            {hasReceiptTemplate && docxUrl && docxFormat !== 'docx' && (
+              <button onClick={() => window.open(docxUrl + '#print', '_blank')} style={{ padding: '8px 15px', borderRadius: 9, border: 0, background: '#12a094', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Print / Save PDF</button>
+            )}
+            {hasReceiptTemplate && docxUrl && docxFormat === 'docx' && (
+              <a href={docxUrl} target="_blank" rel="noopener noreferrer" style={{ padding: '8px 15px', borderRadius: 9, border: 0, background: '#12a094', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer', textDecoration: 'none' }}>Download</a>
+            )}
+            {!hasReceiptTemplate && <button onClick={() => window.print()} style={{ padding: '8px 15px', borderRadius: 9, border: 0, background: '#12a094', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Print / Save PDF</button>}
             <button onClick={onClose} style={{ width: 32, height: 32, borderRadius: 8, border: 0, background: 'rgba(255,255,255,.15)', color: '#fff', fontSize: 15, cursor: 'pointer' }}>✕</button>
           </div>
         </div>
+
+        {hasReceiptTemplate && (
+          <div style={{ minHeight: 400 }}>
+            {docxLoading && (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 60, gap: 16 }}>
+                <div style={{ width: 36, height: 36, border: '3px solid #e2efec', borderTopColor: '#12a094', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+                <span style={{ color: '#5c7a76', fontSize: 14 }}>Generating receipt...</span>
+                <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
+              </div>
+            )}
+            {docxError && (
+              <div style={{ padding: 40, textAlign: 'center', color: '#c0392b', fontSize: 14 }}>
+                <p>Failed to generate receipt</p>
+                <p style={{ fontSize: 12, color: '#888', marginTop: 8 }}>{docxError}</p>
+              </div>
+            )}
+            {docxUrl && (docxFormat === 'pdf' || docxFormat === 'html') && (
+              <iframe src={docxUrl} style={{ width: '100%', height: 700, border: 'none' }} title="Receipt" />
+            )}
+            {docxUrl && docxFormat === 'docx' && (
+              <div style={{ padding: 40, textAlign: 'center' }}>
+                <p style={{ color: '#0e3b39', fontSize: 15, fontWeight: 600, marginBottom: 12 }}>Receipt generated successfully</p>
+                <p style={{ color: '#5c7a76', fontSize: 13, marginBottom: 20 }}>PDF conversion not available. Download the file to view and print.</p>
+                <a href={docxUrl} target="_blank" rel="noopener noreferrer" style={{ display: 'inline-block', padding: '12px 28px', borderRadius: 10, background: '#12a094', color: '#fff', fontWeight: 700, fontSize: 14, textDecoration: 'none' }}>Download Receipt</a>
+              </div>
+            )}
+          </div>
+        )}
+
+        {!hasReceiptTemplate && (
         <div style={{ padding: '26px 28px 30px' }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, borderBottom: '2px solid #0e756c', paddingBottom: 14, flexWrap: 'wrap' }}>
             <div>
@@ -438,6 +527,7 @@ function ReceiptSheet({ receipt, onClose, clinicName, clinicAddress }) {
             <span style={{ textAlign: 'center', fontSize: 12.5, color: '#5c7a76', borderTop: '1px solid #cfe3df', paddingTop: 7, minWidth: 180 }}>For {clinicName}</span>
           </div>
         </div>
+        )}
       </div>
     </div>
   );
@@ -458,7 +548,8 @@ export default function Clinical({
   labNames,
   readOnly, onCreateNewVisit,
   clinicName, clinicAddress, doctorName, doctorQualification,
-  rxTemplateUrl, hasDocxTemplate,
+  rxTemplateUrl, hasDocxTemplate, hasReceiptTemplate,
+  onPaymentSaved,
 }) {
   const [step, setStep] = useState(1);
   const [detailVisit, setDetailVisit] = useState(null);
@@ -1087,9 +1178,9 @@ export default function Clinical({
 
       {/* ── Modals ── */}
       {rxOpen && <PrescriptionSheet rx={buildRx(cform, meta)} onClose={() => setRxOpen(false)} clinicName={clinicName || ''} clinicAddress={clinicAddress || ''} doctorName={doctorName} doctorQualification={doctorQualification} rxTemplateUrl={rxTemplateUrl} hasDocxTemplate={hasDocxTemplate} />}
-      {rcOpen && <ReceiptSheet receipt={buildReceipt(cform, meta)} onClose={() => setRcOpen(false)} clinicName={clinicName || ''} clinicAddress={clinicAddress || ''} />}
+      {rcOpen && <ReceiptSheet receipt={buildReceipt(cform, meta)} onClose={() => setRcOpen(false)} clinicName={clinicName || ''} clinicAddress={clinicAddress || ''} doctorName={doctorName} hasReceiptTemplate={hasReceiptTemplate} onPaymentSaved={onPaymentSaved} />}
       {viewDoc && viewDoc.kind === 'rx' && <PrescriptionSheet rx={viewDoc.data} onClose={() => setViewDoc(null)} clinicName={clinicName || ''} clinicAddress={clinicAddress || ''} doctorName={doctorName} doctorQualification={doctorQualification} rxTemplateUrl={rxTemplateUrl} hasDocxTemplate={hasDocxTemplate} />}
-      {viewDoc && viewDoc.kind === 'receipt' && <ReceiptSheet receipt={viewDoc.data} onClose={() => setViewDoc(null)} clinicName={clinicName || ''} clinicAddress={clinicAddress || ''} />}
+      {viewDoc && viewDoc.kind === 'receipt' && <ReceiptSheet receipt={viewDoc.data} onClose={() => setViewDoc(null)} clinicName={clinicName || ''} clinicAddress={clinicAddress || ''} doctorName={doctorName} hasReceiptTemplate={hasReceiptTemplate} />}
 
       {detail && (
         <div onClick={() => setDetailVisit(null)} style={{ position: 'fixed', inset: 0, zIndex: 80, background: 'rgba(14,59,57,.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
@@ -1157,4 +1248,4 @@ function normalizeClinical(c) {
   return out;
 }
 
-export { buildRx, buildReceipt, normalizeClinical };
+export { buildRx, buildReceipt, normalizeClinical, ReceiptSheet };

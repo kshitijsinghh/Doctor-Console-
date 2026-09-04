@@ -706,6 +706,7 @@ export default function App({ user, onLogout }) {
             doctorName={org?.doctorName} doctorQualification={org?.doctorQualification}
             rxTemplateUrl={rxTemplateUrl}
             hasDocxTemplate={!!org?.rxTemplateKey?.endsWith('.docx')}
+            hasReceiptTemplate={!!org?.receiptTemplateKey?.endsWith('.docx')}
           />
         )}
 
@@ -750,6 +751,8 @@ export default function App({ user, onLogout }) {
             doctorName={org?.doctorName} doctorQualification={org?.doctorQualification}
             rxTemplateUrl={rxTemplateUrl}
             hasDocxTemplate={!!org?.rxTemplateKey?.endsWith('.docx')}
+            hasReceiptTemplate={!!org?.receiptTemplateKey?.endsWith('.docx')}
+            onPaymentSaved={() => loadList(true)}
           />
         )}
       </main>
