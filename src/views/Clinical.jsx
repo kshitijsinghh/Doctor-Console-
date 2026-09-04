@@ -1237,14 +1237,21 @@ export default function Clinical({
 }
 
 /* Normalize clinical record for backward compat */
+function tryParseJson(v) {
+  if (typeof v === 'string' && v.startsWith('[')) {
+    try { const p = JSON.parse(v); if (Array.isArray(p)) return p; } catch {}
+  }
+  return v;
+}
 function normalizeClinical(c) {
   const out = { ...c };
   ['chiefComplaint', 'treatmentGroup', 'treatment', 'advisedTreatment', 'toothNumber'].forEach(k => {
-    out[k] = Array.isArray(out[k]) ? out[k] : (out[k] ? [out[k]] : []);
+    let v = tryParseJson(out[k]);
+    out[k] = Array.isArray(v) ? v : (v ? [v] : []);
   });
-  out.medicines = Array.isArray(out.medicines) ? out.medicines : [];
-  out.paySplits = Array.isArray(out.paySplits) ? out.paySplits : [];
-  out.documents = Array.isArray(out.documents) ? out.documents : [];
+  out.medicines = Array.isArray(out.medicines) ? out.medicines : tryParseJson(out.medicines) || [];
+  out.paySplits = Array.isArray(out.paySplits) ? out.paySplits : tryParseJson(out.paySplits) || [];
+  out.documents = Array.isArray(out.documents) ? out.documents : tryParseJson(out.documents) || [];
   return out;
 }
 

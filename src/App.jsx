@@ -52,14 +52,21 @@ function blankClinical() {
     treatmentStage: '', googleReviewTaken: '', nextAppointment: '', nextAppointmentTime: '', comments: '',
   };
 }
+function tryParseJson(v) {
+  if (typeof v === 'string' && v.startsWith('[')) {
+    try { const p = JSON.parse(v); if (Array.isArray(p)) return p; } catch {}
+  }
+  return v;
+}
 function normalizeClinical(c) {
   const out = { ...blankClinical(), ...c };
   ['chiefComplaint', 'treatmentGroup', 'treatment', 'advisedTreatment', 'toothNumber'].forEach(k => {
-    out[k] = Array.isArray(out[k]) ? out[k] : (out[k] ? [out[k]] : []);
+    let v = tryParseJson(out[k]);
+    out[k] = Array.isArray(v) ? v : (v ? [v] : []);
   });
-  out.medicines = Array.isArray(out.medicines) ? out.medicines : [];
-  out.paySplits = Array.isArray(out.paySplits) ? out.paySplits : [];
-  out.documents = Array.isArray(out.documents) ? out.documents : [];
+  out.medicines = Array.isArray(out.medicines) ? out.medicines : tryParseJson(out.medicines) || [];
+  out.paySplits = Array.isArray(out.paySplits) ? out.paySplits : tryParseJson(out.paySplits) || [];
+  out.documents = Array.isArray(out.documents) ? out.documents : tryParseJson(out.documents) || [];
   return out;
 }
 function findAllByMobile(db, mobile) {
@@ -366,7 +373,8 @@ export default function App({ user, onLogout }) {
       saveForm.balanceDue = String(Math.max(0, remaining));
       // Strip base64 dataUrl — too large for Sheet cells (50K char limit); files go to S3 later
       saveForm.documents = (saveForm.documents || []).map(({ dataUrl, ...rest }) => rest);
-      await saveClinical({ patientId: curPatientId, visitId: curVisitId, cform: saveForm });
+      const res = await saveClinical({ patientId: curPatientId, visitId: curVisitId, cform: saveForm });
+      applySnapshot(res);
     } catch {
       setClinicalError('Auto-save failed — your data is still in the form.');
     } finally {
