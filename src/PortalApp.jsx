@@ -111,16 +111,22 @@ function fileTypeLabel(type) {
 
 function buildVisitData(me, v, myPatientId) {
   const c = v.clinical || {};
+  const ageGender = (me.age || '?') + ' yrs / ' + (me.gender || '—');
   return {
-    clinicName: '', patientName: me.name, patientAge: me.age || '', patientGender: me.gender || '',
-    patientMobile: me.mobile || '', patientId: myPatientId, visitId: v.visitId,
-    visitDate: v.date, medicalHistory: c.medicalHistory || '',
+    patientName: me.name, age_sex: ageGender, mobile: me.mobile || '',
+    date: fmtDate(v.date), visitId: v.visitId,
     chiefComplaint: listLabel(c.chiefComplaint, ''),
-    chiefDescription: c.chiefDescription || '',
+    description: c.chiefDescription || '',
     treatmentGroup: listLabel(c.treatmentGroup, ''),
-    treatment: trLabel(c) || '', advisedTreatment: listLabel(c.advisedTreatment, ''),
     toothNumber: listLabel(c.toothNumber, ''),
-    medicines: c.medicines || [], treatmentCost: c.treatmentCost || '',
+    treatment: trLabel(c) || '', advisedTreatment: listLabel(c.advisedTreatment, ''),
+    medicalHistory: c.medicalHistory || '',
+    comments: c.comments || '',
+    medicines: (c.medicines || []).filter(m => m.name).map(m => ({
+      name: m.name, unit: m.unit || '',
+      dose: medDoseText(m), food: m.food || '', duration: m.duration ? (m.duration + ' days') : '',
+    })),
+    treatmentCost: c.treatmentCost || '',
     amountPaid: c.amountPaid || '', balanceDue: c.balanceDue || '',
     paymentMode: c.paymentMode || '', paymentStatus: c.paymentStatus || '',
     paySplits: c.paySplits || [],
