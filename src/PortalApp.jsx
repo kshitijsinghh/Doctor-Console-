@@ -1086,7 +1086,7 @@ export default function PortalApp() {
             </span>
             <span style={{ lineHeight: 1.1, minWidth: 0 }}>
               <span style={{ display: 'block', fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: '15.5px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{CLINIC_NAME}</span>
-              <span style={{ display: 'block', fontSize: '9.5px', letterSpacing: '.16em', textTransform: 'uppercase', color: '#7fd4c9', fontWeight: 600 }}>Patient check-in</span>
+              <span style={{ display: 'block', fontSize: '9.5px', letterSpacing: '.16em', textTransform: 'uppercase', color: '#7fd4c9', fontWeight: 600 }}>{org?.clinicName || 'Patient check-in'}</span>
             </span>
           </div>
           {signedIn && (
