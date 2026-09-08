@@ -254,13 +254,15 @@ function PrescriptionSheet({ rx, onClose, clinicName, clinicAddress, doctorName,
         <div id="rx-chrome" style={{ background: '#0e3b39', color: '#fff', padding: '14px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
           <span style={{ fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: 16 }}>E-Prescription</span>
           <div style={{ display: 'flex', gap: 8 }}>
-            {hasDocxTemplate && docxUrl && docxFormat === 'docx' && (
-              <a href={docxUrl} target="_blank" rel="noopener noreferrer" style={{ padding: '8px 15px', borderRadius: 9, border: 0, background: '#12a094', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer', textDecoration: 'none' }}>Download</a>
+            {hasDocxTemplate && docxUrl && (
+              <button onClick={() => { const w = window.open(docxUrl + '#print', '_blank'); if (w) w.focus(); }} style={{ padding: '8px 15px', borderRadius: 9, border: '1px solid rgba(255,255,255,.3)', background: 'transparent', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Print</button>
             )}
-            {hasDocxTemplate && docxUrl && docxFormat !== 'docx' && (
-              <button onClick={() => window.open(docxUrl + '#print', '_blank')} style={{ padding: '8px 15px', borderRadius: 9, border: 0, background: '#12a094', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Print / Save PDF</button>
+            {hasDocxTemplate && docxUrl && (
+              <button onClick={() => { fetch(docxUrl).then(r => r.blob()).then(b => { const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = `Prescription_${rx.visitId || 'doc'}.${docxFormat === 'docx' ? 'docx' : 'html'}`; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(a.href); }); }} style={{ padding: '8px 15px', borderRadius: 9, border: 0, background: '#12a094', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Download</button>
             )}
-            {!hasDocxTemplate && <button onClick={() => window.print()} style={{ padding: '8px 15px', borderRadius: 9, border: 0, background: '#12a094', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Print / Save PDF</button>}
+            {!hasDocxTemplate && (
+              <button onClick={() => window.print()} style={{ padding: '8px 15px', borderRadius: 9, border: '1px solid rgba(255,255,255,.3)', background: 'transparent', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Print</button>
+            )}
             <button onClick={onClose} style={{ width: 32, height: 32, borderRadius: 8, border: 0, background: 'rgba(255,255,255,.15)', color: '#fff', fontSize: 15, cursor: 'pointer' }}>✕</button>
           </div>
         </div>
@@ -436,19 +438,15 @@ function ReceiptSheet({ receipt, onClose, clinicName, clinicAddress, doctorName,
         <div id="rx-chrome" style={{ background: '#0e3b39', color: '#fff', padding: '14px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
           <span style={{ fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: 16 }}>Payment Receipt</span>
           <div style={{ display: 'flex', gap: 8 }}>
-            {!paymentSaved && (
-              <button onClick={handleSavePayment} disabled={paymentSaving} style={{ padding: '8px 15px', borderRadius: 9, border: '1px solid rgba(255,255,255,.3)', background: 'transparent', color: '#fff', fontWeight: 700, fontSize: 13, cursor: paymentSaving ? 'not-allowed' : 'pointer', opacity: paymentSaving ? 0.6 : 1 }}>
-                {paymentSaving ? 'Saving...' : 'Save Payment'}
-              </button>
+            {hasReceiptTemplate && docxUrl && (
+              <button onClick={() => { const w = window.open(docxUrl + '#print', '_blank'); if (w) w.focus(); }} style={{ padding: '8px 15px', borderRadius: 9, border: '1px solid rgba(255,255,255,.3)', background: 'transparent', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Print</button>
             )}
-            {paymentSaved && <span style={{ padding: '8px 12px', fontSize: 13, color: '#a8f0d0', fontWeight: 600 }}>Saved</span>}
-            {hasReceiptTemplate && docxUrl && docxFormat !== 'docx' && (
-              <button onClick={() => window.open(docxUrl + '#print', '_blank')} style={{ padding: '8px 15px', borderRadius: 9, border: 0, background: '#12a094', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Print / Save PDF</button>
+            {hasReceiptTemplate && docxUrl && (
+              <button onClick={() => { fetch(docxUrl).then(r => r.blob()).then(b => { const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = `Receipt_${receipt.visitId || 'doc'}.${docxFormat === 'docx' ? 'docx' : 'html'}`; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(a.href); }); }} style={{ padding: '8px 15px', borderRadius: 9, border: 0, background: '#12a094', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Download</button>
             )}
-            {hasReceiptTemplate && docxUrl && docxFormat === 'docx' && (
-              <a href={docxUrl} target="_blank" rel="noopener noreferrer" style={{ padding: '8px 15px', borderRadius: 9, border: 0, background: '#12a094', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer', textDecoration: 'none' }}>Download</a>
+            {!hasReceiptTemplate && (
+              <button onClick={() => window.print()} style={{ padding: '8px 15px', borderRadius: 9, border: '1px solid rgba(255,255,255,.3)', background: 'transparent', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Print</button>
             )}
-            {!hasReceiptTemplate && <button onClick={() => window.print()} style={{ padding: '8px 15px', borderRadius: 9, border: 0, background: '#12a094', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Print / Save PDF</button>}
             <button onClick={onClose} style={{ width: 32, height: 32, borderRadius: 8, border: 0, background: 'rgba(255,255,255,.15)', color: '#fff', fontSize: 15, cursor: 'pointer' }}>✕</button>
           </div>
         </div>

@@ -1861,16 +1861,12 @@ export default function PortalApp() {
                   <span style={{ fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: 16 }}>{title}</span>
                   <div style={{ display: 'flex', gap: 8 }}>
                     {useDocxView && docxContent?.url && (
-                      docxContent.format === 'html' ? (
-                        <button onClick={() => {
-                          const w = window.open(docxContent.url, '_blank');
-                          if (w) setTimeout(() => { try { w.print(); } catch {} }, 800);
-                        }} style={{ padding: '8px 14px', borderRadius: 9, border: 0, background: '#12a094', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Save PDF</button>
-                      ) : (
-                        <a href={docxContent.url} target="_blank" rel="noopener noreferrer" style={{ padding: '8px 14px', borderRadius: 9, border: 0, background: '#12a094', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer', textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}>Download</a>
-                      )
+                      <button onClick={() => { const w = window.open(docxContent.url + '#print', '_blank'); if (w) w.focus(); }} style={{ padding: '8px 14px', borderRadius: 9, border: '1px solid rgba(255,255,255,.3)', background: 'transparent', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Print</button>
                     )}
-                    {!useDocxView && <button onClick={() => { try { window.print(); } catch {} }} style={{ padding: '8px 14px', borderRadius: 9, border: 0, background: '#12a094', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Save PDF</button>}
+                    {useDocxView && docxContent?.url && (
+                      <button onClick={() => { fetch(docxContent.url).then(r => r.blob()).then(b => { const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = `${isRx ? 'Prescription' : 'Receipt'}_${viewDoc.visitId || 'doc'}.${docxContent.format === 'docx' ? 'docx' : 'html'}`; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(a.href); }); }} style={{ padding: '8px 14px', borderRadius: 9, border: 0, background: '#12a094', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Download</button>
+                    )}
+                    {!useDocxView && <button onClick={() => { try { window.print(); } catch {} }} style={{ padding: '8px 14px', borderRadius: 9, border: '1px solid rgba(255,255,255,.3)', background: 'transparent', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Print</button>}
                     <button onClick={() => { setViewDoc(null); setDocxContent(null); }} style={{ width: 32, height: 32, borderRadius: 9, border: 0, background: 'rgba(255,255,255,.15)', color: '#fff', fontSize: 15, cursor: 'pointer' }}>{'✕'}</button>
                   </div>
                 </div>
