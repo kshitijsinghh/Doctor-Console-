@@ -126,10 +126,14 @@ export default function App({ user, onLogout }) {
         if (v.visitId !== visitId) return v;
         return { ...v, done: true, clinical: {
           ...v.clinical,
+          patientType: savedForm.patientType || '',
+          medicalHistory: savedForm.medicalHistory || '',
           chiefComplaint: savedForm.chiefComplaint || '',
           chiefDescription: savedForm.chiefDescription || '',
           treatmentGroup: savedForm.treatmentGroup || '',
           treatment: savedForm.treatment || '',
+          advisedTreatment: savedForm.advisedTreatment || '',
+          advisedTreatmentOther: savedForm.advisedTreatmentOther || '',
           toothNumber: savedForm.toothNumber || '',
           treatmentOther: savedForm.treatmentOther || '',
           treatmentCost: savedForm.treatmentCost === '' ? '' : String(savedForm.treatmentCost),
@@ -142,6 +146,13 @@ export default function App({ user, onLogout }) {
           nextAppointment: savedForm.nextAppointment || '',
           nextAppointmentTime: savedForm.nextAppointmentTime || '',
           comments: savedForm.comments || '',
+          labName: savedForm.labName || '',
+          labToothNumber: savedForm.labToothNumber || '',
+          labDescription: savedForm.labDescription || '',
+          patientProblem: savedForm.patientProblem || v.clinical?.patientProblem || '',
+          medicines: savedForm.medicines || [],
+          paySplits: savedForm.paySplits || [],
+          documents: savedForm.documents || [],
         }};
       });
       return { ...prev, patients: { ...prev.patients, [patientId]: { ...p, visits } } };
