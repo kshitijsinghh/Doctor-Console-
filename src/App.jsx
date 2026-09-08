@@ -118,6 +118,36 @@ export default function App({ user, onLogout }) {
     setDbState({ patients: res.patients, order: res.order, seq: res.seq, upiQr: res.upiQr, labNames: res.labNames || [] });
   }
 
+  function applyClinicalLocally(patientId, visitId, savedForm, serverRes) {
+    setDbState(prev => {
+      const p = prev.patients[patientId];
+      if (!p) return prev;
+      const visits = p.visits.map(v => {
+        if (v.visitId !== visitId) return v;
+        return { ...v, done: true, clinical: {
+          ...v.clinical,
+          chiefComplaint: savedForm.chiefComplaint || '',
+          chiefDescription: savedForm.chiefDescription || '',
+          treatmentGroup: savedForm.treatmentGroup || '',
+          treatment: savedForm.treatment || '',
+          toothNumber: savedForm.toothNumber || '',
+          treatmentOther: savedForm.treatmentOther || '',
+          treatmentCost: savedForm.treatmentCost === '' ? '' : String(savedForm.treatmentCost),
+          amountPaid: savedForm.amountPaid === '' ? '' : String(savedForm.amountPaid),
+          balanceDue: serverRes.balanceDue || savedForm.balanceDue || '',
+          paymentMode: savedForm.paymentMode || '',
+          paymentStatus: serverRes.paymentStatus || savedForm.paymentStatus || '',
+          treatmentStage: savedForm.treatmentStage || '',
+          googleReviewTaken: savedForm.googleReviewTaken || '',
+          nextAppointment: savedForm.nextAppointment || '',
+          nextAppointmentTime: savedForm.nextAppointmentTime || '',
+          comments: savedForm.comments || '',
+        }};
+      });
+      return { ...prev, patients: { ...prev.patients, [patientId]: { ...p, visits } } };
+    });
+  }
+
   async function loadList(isRefresh) {
     if (isRefresh) setRefreshing(true); else setLoading(true);
     try {
@@ -374,7 +404,8 @@ export default function App({ user, onLogout }) {
       // Strip base64 dataUrl — too large for Sheet cells (50K char limit); files go to S3 later
       saveForm.documents = (saveForm.documents || []).map(({ dataUrl, ...rest }) => rest);
       const res = await saveClinical({ patientId: curPatientId, visitId: curVisitId, cform: saveForm });
-      applySnapshot(res);
+      if (res.patients) applySnapshot(res);
+      else applyClinicalLocally(curPatientId, curVisitId, saveForm, res);
     } catch {
       setClinicalError('Auto-save failed — your data is still in the form.');
     } finally {
@@ -396,7 +427,8 @@ export default function App({ user, onLogout }) {
       // Strip base64 dataUrl — too large for Sheet cells (50K char limit); files go to S3 later
       saveForm.documents = (saveForm.documents || []).map(({ dataUrl, ...rest }) => rest);
       const res = await saveClinical({ patientId: curPatientId, visitId: curVisitId, cform: saveForm });
-      applySnapshot(res);
+      if (res.patients) applySnapshot(res);
+      else applyClinicalLocally(curPatientId, curVisitId, saveForm, res);
       setSavedFlash(true);
       setTimeout(() => {
         setSavedFlash(false);
