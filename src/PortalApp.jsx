@@ -3,6 +3,40 @@ import { fetchList, portalCheckin, savePatientProblem, getDocumentUrl, fetchOrg,
 import { getFirebaseAuth, RecaptchaVerifier, signInWithPhoneNumber, signOut as firebaseSignOut } from './firebase';
 
 /* ─── helpers ─── */
+async function downloadAsPdf(url, filename) {
+  const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
+    import('html2canvas'),
+    import('jspdf'),
+  ]);
+  const res = await fetch(url);
+  const htmlText = await res.text();
+  const wrapper = document.createElement('div');
+  wrapper.style.cssText = 'position:fixed;left:-10000px;top:0;width:800px;background:#fff;z-index:-1;';
+  const bodyMatch = htmlText.match(/<body[^>]*>([\s\S]*)<\/body>/i);
+  const styleMatch = htmlText.match(/<style>([\s\S]*?)<\/style>/g);
+  let inner = bodyMatch ? bodyMatch[1] : htmlText;
+  inner = inner.replace(/<script[\s\S]*?<\/script>/gi, '');
+  inner = inner.replace(/<div id="print-btn"[\s\S]*?<\/div>/i, '');
+  if (styleMatch) wrapper.innerHTML = styleMatch.join('') + inner;
+  else wrapper.innerHTML = inner;
+  document.body.appendChild(wrapper);
+  await new Promise(r => setTimeout(r, 300));
+  const canvas = await html2canvas(wrapper, { scale: 2, useCORS: true, logging: false });
+  document.body.removeChild(wrapper);
+  const pdf = new jsPDF('p', 'mm', 'a4');
+  const pageW = pdf.internal.pageSize.getWidth();
+  const pageH = pdf.internal.pageSize.getHeight();
+  const imgW = pageW - 10;
+  const imgH = (canvas.height * imgW) / canvas.width;
+  let y = 0;
+  while (y < imgH) {
+    if (y > 0) pdf.addPage();
+    pdf.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', 5, -y + 5, imgW, imgH);
+    y += pageH - 10;
+  }
+  pdf.save(filename);
+}
+
 function localToday() {
   const d = new Date();
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
@@ -1864,7 +1898,7 @@ export default function PortalApp() {
                       <button onClick={() => { const w = window.open(docxContent.url + '#print', '_blank'); if (w) w.focus(); }} style={{ padding: '8px 14px', borderRadius: 9, border: '1px solid rgba(255,255,255,.3)', background: 'transparent', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Print</button>
                     )}
                     {useDocxView && docxContent?.url && (
-                      <button onClick={() => { fetch(docxContent.url).then(r => r.blob()).then(b => { const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = `${isRx ? 'Prescription' : 'Receipt'}_${viewDoc.visitId || 'doc'}.${docxContent.format === 'docx' ? 'docx' : 'html'}`; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(a.href); }); }} style={{ padding: '8px 14px', borderRadius: 9, border: 0, background: '#12a094', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Download</button>
+                      <button onClick={() => downloadAsPdf(docxContent.url, `${isRx ? 'Prescription' : 'Receipt'}_${viewDoc.visitId || 'doc'}.pdf`)} style={{ padding: '8px 14px', borderRadius: 9, border: 0, background: '#12a094', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Download</button>
                     )}
                     {!useDocxView && <button onClick={() => { try { window.print(); } catch {} }} style={{ padding: '8px 14px', borderRadius: 9, border: '1px solid rgba(255,255,255,.3)', background: 'transparent', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Print</button>}
                     <button onClick={() => { setViewDoc(null); setDocxContent(null); }} style={{ width: 32, height: 32, borderRadius: 9, border: 0, background: 'rgba(255,255,255,.15)', color: '#fff', fontSize: 15, cursor: 'pointer' }}>{'✕'}</button>
