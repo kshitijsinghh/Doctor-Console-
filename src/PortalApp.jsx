@@ -37,6 +37,29 @@ async function downloadAsPdf(url, filename) {
   pdf.save(filename);
 }
 
+// Capture an already-rendered on-screen element to a PDF (inline HTML rx/receipt).
+async function downloadElementAsPdf(elementId, filename) {
+  const el = document.getElementById(elementId);
+  if (!el) { window.print(); return; }
+  const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
+    import('html2canvas'),
+    import('jspdf'),
+  ]);
+  const canvas = await html2canvas(el, { scale: 2, useCORS: true, logging: false, backgroundColor: '#ffffff' });
+  const pdf = new jsPDF('p', 'mm', 'a4');
+  const pageW = pdf.internal.pageSize.getWidth();
+  const pageH = pdf.internal.pageSize.getHeight();
+  const imgW = pageW - 10;
+  const imgH = (canvas.height * imgW) / canvas.width;
+  let y = 0;
+  while (y < imgH) {
+    if (y > 0) pdf.addPage();
+    pdf.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', 5, -y + 5, imgW, imgH);
+    y += pageH - 10;
+  }
+  pdf.save(filename);
+}
+
 function localToday() {
   const d = new Date();
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
@@ -1889,7 +1912,7 @@ export default function PortalApp() {
           const rx = (!useDocxView && isRx) ? buildRx(c, meta, CLINIC_NAME) : null;
           const receipt = (!useDocxView && !isRx) ? buildReceipt(c, meta) : null;
           return (
-            <div id="rx-overlay" onClick={() => { setViewDoc(null); setDocxContent(null); }} style={{ position: 'fixed', inset: 0, zIndex: 95, background: 'rgba(14,59,57,.6)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 14, overflow: 'auto' }}>
+            <div id="rx-overlay" style={{ position: 'fixed', inset: 0, zIndex: 95, background: 'rgba(14,59,57,.6)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 14, overflow: 'auto' }}>
               <div id="rx-sheet" onClick={e => e.stopPropagation()} style={{ background: '#fff', borderRadius: 18, width: '100%', maxWidth: 560, overflow: 'hidden', margin: 'auto' }}>
                 <div id="rx-chrome" style={{ background: '#0e3b39', color: '#fff', padding: '14px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
                   <span style={{ fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: 16 }}>{title}</span>
@@ -1901,6 +1924,7 @@ export default function PortalApp() {
                       <button onClick={() => downloadAsPdf(docxContent.url, `${isRx ? 'Prescription' : 'Receipt'}_${viewDoc.visitId || 'doc'}.pdf`)} style={{ padding: '8px 14px', borderRadius: 9, border: 0, background: '#12a094', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Download</button>
                     )}
                     {!useDocxView && <button onClick={() => { try { window.print(); } catch {} }} style={{ padding: '8px 14px', borderRadius: 9, border: '1px solid rgba(255,255,255,.3)', background: 'transparent', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Print</button>}
+                    {!useDocxView && <button onClick={() => downloadElementAsPdf('portal-print-body', `${isRx ? 'Prescription' : 'Receipt'}_${viewDoc.visitId || 'doc'}.pdf`)} style={{ padding: '8px 14px', borderRadius: 9, border: 0, background: '#12a094', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Download</button>}
                     <button onClick={() => { setViewDoc(null); setDocxContent(null); }} style={{ width: 32, height: 32, borderRadius: 9, border: 0, background: 'rgba(255,255,255,.15)', color: '#fff', fontSize: 15, cursor: 'pointer' }}>{'✕'}</button>
                   </div>
                 </div>
@@ -1933,7 +1957,7 @@ export default function PortalApp() {
 
                 {/* Standard prescription view (no DOCX template) */}
                 {!useDocxView && isRx && rx && (
-                  <div style={{ padding: '20px 20px 26px' }}>
+                  <div id="portal-print-body" style={{ padding: '20px 20px 26px', background: '#fff' }}>
                     <div style={{ borderBottom: '2px solid #0e756c', paddingBottom: 12 }}>
                       <span style={{ display: 'block', fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: 18, color: '#0e3b39' }}>{CLINIC_NAME}</span>
                       <span style={{ display: 'block', fontSize: '11.5px', color: '#5c7a76', marginTop: 6 }}>Date: <strong style={{ color: '#0e3b39' }}>{rx.dateLabel}</strong> &middot; <span style={{ fontFamily: 'ui-monospace,monospace' }}>{rx.visitId}</span></span>
@@ -1969,7 +1993,7 @@ export default function PortalApp() {
 
                 {/* Standard receipt view (no DOCX template) */}
                 {!useDocxView && !isRx && receipt && (
-                  <div style={{ padding: '20px 20px 26px' }}>
+                  <div id="portal-print-body" style={{ padding: '20px 20px 26px', background: '#fff' }}>
                     <div style={{ borderBottom: '2px solid #0e756c', paddingBottom: 12 }}>
                       <span style={{ display: 'block', fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: 18, color: '#0e3b39' }}>{CLINIC_NAME}</span>
                       <span style={{ display: 'block', fontSize: '11.5px', color: '#5c7a76', marginTop: 6 }}>Date: <strong style={{ color: '#0e3b39' }}>{receipt.dateLabel}</strong> &middot; <span style={{ fontFamily: 'ui-monospace,monospace' }}>{receipt.receiptNo}</span></span>
@@ -2010,8 +2034,8 @@ export default function PortalApp() {
           const docs = ((v.clinical || {}).documents) || [];
           if (docs.length === 0) return null;
           return (
-            <div onClick={() => setFilesVisit(null)} style={{ position: 'fixed', inset: 0, zIndex: 95, background: 'rgba(14,59,57,.6)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 14, overflow: 'auto' }}>
-              <div onClick={e => e.stopPropagation()} style={{ background: '#fff', borderRadius: 20, width: '100%', maxWidth: 460, overflow: 'hidden', margin: 'auto' }}>
+            <div style={{ position: 'fixed', inset: 0, zIndex: 95, background: 'rgba(14,59,57,.6)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 14, overflow: 'auto' }}>
+              <div style={{ background: '#fff', borderRadius: 20, width: '100%', maxWidth: 460, overflow: 'hidden', margin: 'auto' }}>
                 <div style={{ background: '#0e3b39', color: '#fff', padding: '16px 18px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
                   <div style={{ minWidth: 0 }}>
                     <span style={{ display: 'block', fontFamily: 'ui-monospace,monospace', fontSize: 12, color: '#7fd4c9', fontWeight: 700 }}>{v.visitId}</span>

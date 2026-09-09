@@ -40,6 +40,30 @@ async function downloadAsPdf(url, filename) {
   pdf.save(filename);
 }
 
+// Capture an already-rendered on-screen element to a PDF (used when there is no
+// server-generated docx/pdf URL — the inline HTML prescription/receipt).
+async function downloadElementAsPdf(elementId, filename) {
+  const el = document.getElementById(elementId);
+  if (!el) { window.print(); return; }
+  const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
+    import('html2canvas'),
+    import('jspdf'),
+  ]);
+  const canvas = await html2canvas(el, { scale: 2, useCORS: true, logging: false, backgroundColor: '#ffffff' });
+  const pdf = new jsPDF('p', 'mm', 'a4');
+  const pageW = pdf.internal.pageSize.getWidth();
+  const pageH = pdf.internal.pageSize.getHeight();
+  const imgW = pageW - 10;
+  const imgH = (canvas.height * imgW) / canvas.width;
+  let y = 0;
+  while (y < imgH) {
+    if (y > 0) pdf.addPage();
+    pdf.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', 5, -y + 5, imgW, imgH);
+    y += pageH - 10;
+  }
+  pdf.save(filename);
+}
+
 const fieldStyle = {
   width: '100%', minHeight: 44, padding: '12px 14px', border: '1px solid #d6e7e3', borderRadius: 10,
   fontSize: 15, background: '#f7fbfa',
@@ -283,7 +307,7 @@ function PrescriptionSheet({ rx, onClose, clinicName, clinicAddress, doctorName,
   }, [hasDocxTemplate]);
 
   return (
-    <div id="rx-overlay" onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 90, background: 'rgba(14,59,57,.6)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 20, overflow: 'auto' }}>
+    <div id="rx-overlay" style={{ position: 'fixed', inset: 0, zIndex: 90, background: 'rgba(14,59,57,.6)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 20, overflow: 'auto' }}>
       <div id="rx-sheet" onClick={(e) => e.stopPropagation()} style={{ background: '#fff', borderRadius: 18, width: '100%', maxWidth: 720, overflow: 'hidden', margin: 'auto' }}>
         <div id="rx-chrome" style={{ background: '#0e3b39', color: '#fff', padding: '14px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
           <span style={{ fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: 16 }}>E-Prescription</span>
@@ -296,6 +320,9 @@ function PrescriptionSheet({ rx, onClose, clinicName, clinicAddress, doctorName,
             )}
             {!hasDocxTemplate && (
               <button onClick={() => window.print()} style={{ padding: '8px 15px', borderRadius: 9, border: '1px solid rgba(255,255,255,.3)', background: 'transparent', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Print</button>
+            )}
+            {!hasDocxTemplate && (
+              <button onClick={() => downloadElementAsPdf('rx-print-body', `Prescription_${rx.visitId || 'doc'}.pdf`)} style={{ padding: '8px 15px', borderRadius: 9, border: 0, background: '#12a094', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Download</button>
             )}
             <button onClick={onClose} style={{ width: 32, height: 32, borderRadius: 8, border: 0, background: 'rgba(255,255,255,.15)', color: '#fff', fontSize: 15, cursor: 'pointer' }}>✕</button>
           </div>
@@ -332,7 +359,7 @@ function PrescriptionSheet({ rx, onClose, clinicName, clinicAddress, doctorName,
 
         {/* Image template or no template — existing rendering */}
         {!hasDocxTemplate && (
-        <div style={{ position: 'relative' }}>
+        <div id="rx-print-body" style={{ position: 'relative', background: '#fff' }}>
           {hasImageTemplate && <img src={rxTemplateUrl} alt="" style={{ width: '100%', display: 'block' }} />}
           {hasImageTemplate && (
             <div style={{ position: 'absolute', top: '29%', left: '62%', right: '3%', fontSize: 11, color: '#111', fontWeight: 600, lineHeight: 2.1 }}>
@@ -467,7 +494,7 @@ function ReceiptSheet({ receipt, onClose, clinicName, clinicAddress, doctorName,
   }
 
   return (
-    <div id="rx-overlay" onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 90, background: 'rgba(14,59,57,.6)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 20, overflow: 'auto' }}>
+    <div id="rx-overlay" style={{ position: 'fixed', inset: 0, zIndex: 90, background: 'rgba(14,59,57,.6)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 20, overflow: 'auto' }}>
       <div id="rx-sheet" onClick={(e) => e.stopPropagation()} style={{ background: '#fff', borderRadius: 18, width: '100%', maxWidth: hasReceiptTemplate ? 720 : 560, overflow: 'hidden', margin: 'auto' }}>
         <div id="rx-chrome" style={{ background: '#0e3b39', color: '#fff', padding: '14px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
           <span style={{ fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: 16 }}>Payment Receipt</span>
@@ -480,6 +507,9 @@ function ReceiptSheet({ receipt, onClose, clinicName, clinicAddress, doctorName,
             )}
             {!hasReceiptTemplate && (
               <button onClick={() => window.print()} style={{ padding: '8px 15px', borderRadius: 9, border: '1px solid rgba(255,255,255,.3)', background: 'transparent', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Print</button>
+            )}
+            {!hasReceiptTemplate && (
+              <button onClick={() => downloadElementAsPdf('rc-print-body', `Receipt_${receipt.visitId || 'doc'}.pdf`)} style={{ padding: '8px 15px', borderRadius: 9, border: 0, background: '#12a094', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Download</button>
             )}
             <button onClick={onClose} style={{ width: 32, height: 32, borderRadius: 8, border: 0, background: 'rgba(255,255,255,.15)', color: '#fff', fontSize: 15, cursor: 'pointer' }}>✕</button>
           </div>
@@ -514,7 +544,7 @@ function ReceiptSheet({ receipt, onClose, clinicName, clinicAddress, doctorName,
         )}
 
         {!hasReceiptTemplate && (
-        <div style={{ padding: '26px 28px 30px' }}>
+        <div id="rc-print-body" style={{ padding: '26px 28px 30px', background: '#fff' }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, borderBottom: '2px solid #0e756c', paddingBottom: 14, flexWrap: 'wrap' }}>
             <div>
               <span style={{ display: 'block', fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: 19, color: '#0e3b39' }}>{clinicName}</span>
@@ -1308,4 +1338,4 @@ function normalizeClinical(c) {
   return out;
 }
 
-export { buildRx, buildReceipt, normalizeClinical, ReceiptSheet };
+export { buildRx, buildReceipt, normalizeClinical, ReceiptSheet, PrescriptionSheet };
