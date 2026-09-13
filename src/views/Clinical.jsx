@@ -6,7 +6,8 @@ import {
 import { TOUCH_BTN, FLUID_GRID_2COL } from '../styles';
 import { getUploadUrl, uploadToS3, getDocumentUrl, generatePrescriptionPdf, generateReceiptPdf, savePayment, getClinicId } from '../api';
 
-async function downloadAsPdf(url, filename) {
+// Rasterize a server-generated HTML document (fetched from its URL) into a jsPDF instance.
+async function renderUrlToPdf(url) {
   const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
     import('html2canvas'),
     import('jspdf'),
@@ -61,7 +62,35 @@ async function downloadElementAsPdf(elementId, filename) {
     pdf.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', 5, -y + 5, imgW, imgH);
     y += pageH - 10;
   }
+  return pdf;
+}
+
+async function downloadAsPdf(url, filename) {
+  const pdf = await renderUrlToPdf(url);
   pdf.save(filename);
+}
+
+// Print a server-generated document by converting it to a real PDF first — networked
+// MFP printers reliably print PDFs but often error on browser HTML print jobs.
+async function printAsPdf(url) {
+  // Open the tab synchronously inside the click gesture so it isn't popup-blocked.
+  const win = window.open('', '_blank');
+  try {
+    const pdf = await renderUrlToPdf(url);
+    pdf.autoPrint();
+    const blobUrl = pdf.output('bloburl');
+    if (win) win.location.href = blobUrl;
+    else window.open(blobUrl, '_blank');
+  } catch (e) {
+    if (win) { try { win.close(); } catch (_) {} }
+    window.open(url + '#print', '_blank');
+  }
+}
+
+// Capitalise the first letter of each word, leaving the rest of the word as typed
+// ("zerodol p" -> "Zerodol P", "500mg" stays "500mg", "ZERODOL" stays "ZERODOL").
+function titleCase(s) {
+  return String(s == null ? '' : s).replace(/\b[a-z]/g, (c) => c.toUpperCase());
 }
 
 const fieldStyle = {
@@ -200,6 +229,12 @@ function listLabel(v, fallback) {
   if (Array.isArray(v)) return v.length ? v.join(', ') : (fallback || '—');
   return v || fallback || '—';
 }
+// Like listLabel but yields '' (never '—') when empty — used by the prescription,
+// which omits a field entirely rather than printing a placeholder dash.
+function listPlain(v) {
+  if (Array.isArray(v)) return v.join(', ');
+  return v || '';
+}
 function trLabel(c) {
   if (!c) return '';
   const t = Array.isArray(c.treatment) ? c.treatment : (c.treatment ? [c.treatment] : []);
@@ -229,13 +264,14 @@ function buildRx(cf, meta) {
   return {
     dateLabel: meta.dateLabel, name: meta.name, ageGender: meta.ageGender, mobile: meta.mobile,
     patientId: meta.patientId, visitId: meta.visitId,
-    medicalHistory: cf.medicalHistory || '—',
-    chiefComplaint: listLabel(cf.chiefComplaint, '—'),
-    description: cf.chiefDescription || '—',
-    treatmentGroup: listLabel(cf.treatmentGroup, '—'),
-    treatment: trLabel(cf) || '—',
-    advisedTreatment: listLabel(cf.advisedTreatment, '—'),
-    toothNumber: listLabel(cf.toothNumber, '—'),
+    // Empty fields are sent as '' (not '—') so the prescription can omit them entirely.
+    medicalHistory: cf.medicalHistory || '',
+    chiefComplaint: listPlain(cf.chiefComplaint),
+    description: cf.chiefDescription || '',
+    treatmentGroup: listPlain(cf.treatmentGroup),
+    treatment: trLabel(cf) || '',
+    advisedTreatment: listPlain(cf.advisedTreatment),
+    toothNumber: listPlain(cf.toothNumber),
     meds: (cf.medicines || []).filter(m => m.name).map((m, i) => ({
       sn: i + 1, name: m.name, unit: m.unit, dose: medDoseText(m),
       food: m.food, duration: m.duration ? (m.duration + ' days') : '—', total: medTotal(m),
@@ -313,7 +349,7 @@ function PrescriptionSheet({ rx, onClose, clinicName, clinicAddress, doctorName,
           <span style={{ fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: 16 }}>E-Prescription</span>
           <div style={{ display: 'flex', gap: 8 }}>
             {hasDocxTemplate && docxUrl && (
-              <button onClick={() => { const w = window.open(docxUrl + '#print', '_blank'); if (w) w.focus(); }} style={{ padding: '8px 15px', borderRadius: 9, border: '1px solid rgba(255,255,255,.3)', background: 'transparent', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Print</button>
+              <button onClick={() => printAsPdf(docxUrl)} style={{ padding: '8px 15px', borderRadius: 9, border: '1px solid rgba(255,255,255,.3)', background: 'transparent', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Print</button>
             )}
             {hasDocxTemplate && docxUrl && (
               <button onClick={() => downloadAsPdf(docxUrl, `Prescription_${rx.visitId || 'doc'}.pdf`)} style={{ padding: '8px 15px', borderRadius: 9, border: 0, background: '#12a094', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Download</button>
@@ -391,15 +427,15 @@ function PrescriptionSheet({ rx, onClose, clinicName, clinicAddress, doctorName,
                   <span style={{ color: '#5c7a76' }}>Patient: <strong style={{ color: '#0e3b39' }}>{rx.name}</strong></span>
                   <span style={{ color: '#5c7a76' }}>Age / Gender: <strong style={{ color: '#0e3b39' }}>{rx.ageGender}</strong></span>
                   <span style={{ color: '#5c7a76' }}>Mobile: <strong style={{ color: '#0e3b39' }}>{rx.mobile}</strong></span>
-                  <span style={{ color: '#5c7a76' }}>Medical history: <strong style={{ color: '#0e3b39' }}>{rx.medicalHistory}</strong></span>
+                  {!!rx.medicalHistory && <span style={{ color: '#5c7a76' }}>Medical history: <strong style={{ color: '#0e3b39' }}>{rx.medicalHistory}</strong></span>}
                 </div>
                 <div style={{ marginTop: 18, padding: '14px 16px', borderRadius: 12, background: '#f7fbfa', border: '1px solid #e2efec', display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))', gap: '10px 22px', fontSize: 13.5 }}>
-                  <span style={{ color: '#5c7a76' }}>Chief complaint: <strong style={{ color: '#0e3b39' }}>{rx.chiefComplaint}</strong></span>
-                  <span style={{ color: '#5c7a76' }}>Description: <strong style={{ color: '#0e3b39' }}>{rx.description}</strong></span>
-                  <span style={{ color: '#5c7a76' }}>Treatment group: <strong style={{ color: '#0e3b39' }}>{rx.treatmentGroup}</strong></span>
-                  <span style={{ color: '#5c7a76' }}>Tooth number: <strong style={{ color: '#0e3b39' }}>{rx.toothNumber}</strong></span>
-                  <span style={{ color: '#5c7a76' }}>Current treatment: <strong style={{ color: '#0e3b39' }}>{rx.treatment}</strong></span>
-                  <span style={{ color: '#5c7a76' }}>Advised treatment: <strong style={{ color: '#0e3b39' }}>{rx.advisedTreatment}</strong></span>
+                  {!!rx.chiefComplaint && <span style={{ color: '#5c7a76' }}>Chief complaint: <strong style={{ color: '#0e3b39' }}>{rx.chiefComplaint}</strong></span>}
+                  {!!rx.description && <span style={{ color: '#5c7a76' }}>Description: <strong style={{ color: '#0e3b39' }}>{rx.description}</strong></span>}
+                  {!!rx.treatmentGroup && <span style={{ color: '#5c7a76' }}>Treatment group: <strong style={{ color: '#0e3b39' }}>{rx.treatmentGroup}</strong></span>}
+                  {!!rx.toothNumber && <span style={{ color: '#5c7a76' }}>Tooth number: <strong style={{ color: '#0e3b39' }}>{rx.toothNumber}</strong></span>}
+                  {!!rx.treatment && <span style={{ color: '#5c7a76' }}>Current treatment: <strong style={{ color: '#0e3b39' }}>{rx.treatment}</strong></span>}
+                  {!!rx.advisedTreatment && <span style={{ color: '#5c7a76' }}>Advised treatment: <strong style={{ color: '#0e3b39' }}>{rx.advisedTreatment}</strong></span>}
                 </div>
               </>
             )}
@@ -500,7 +536,7 @@ function ReceiptSheet({ receipt, onClose, clinicName, clinicAddress, doctorName,
           <span style={{ fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: 16 }}>Payment Receipt</span>
           <div style={{ display: 'flex', gap: 8 }}>
             {hasReceiptTemplate && docxUrl && (
-              <button onClick={() => { const w = window.open(docxUrl + '#print', '_blank'); if (w) w.focus(); }} style={{ padding: '8px 15px', borderRadius: 9, border: '1px solid rgba(255,255,255,.3)', background: 'transparent', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Print</button>
+              <button onClick={() => printAsPdf(docxUrl)} style={{ padding: '8px 15px', borderRadius: 9, border: '1px solid rgba(255,255,255,.3)', background: 'transparent', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Print</button>
             )}
             {hasReceiptTemplate && docxUrl && (
               <button onClick={() => downloadAsPdf(docxUrl, `Receipt_${receipt.visitId || 'doc'}.pdf`)} style={{ padding: '8px 15px', borderRadius: 9, border: 0, background: '#12a094', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Download</button>
@@ -650,12 +686,19 @@ export default function Clinical({
   /* ── Medicine handlers ── */
   function addMedicine() { onSetField('medicines', [...medicines, { name: '', unit: 'Tablet', morning: false, afternoon: false, evening: false, night: false, food: 'After Food', duration: '' }]); }
   function removeMedicine(i) { onSetField('medicines', medicines.filter((_, x) => x !== i)); }
-  function setMed(i, key, val) { onSetField('medicines', medicines.map((m, x) => x === i ? { ...m, [key]: val } : m)); }
+  function setMed(i, key, val) {
+    const v = key === 'name' ? titleCase(val) : val;
+    onSetField('medicines', medicines.map((m, x) => x === i ? { ...m, [key]: v } : m));
+  }
 
   /* ── Split handlers ── */
   function addSplit() { onSetField('paySplits', [...paySplits, { category: 'Treatment', custom: '', amount: '' }]); setRcError(''); }
   function removeSplit(i) { onSetField('paySplits', paySplits.filter((_, x) => x !== i)); setRcError(''); }
-  function setSplit(i, key, val) { onSetField('paySplits', paySplits.map((sp, x) => x === i ? { ...sp, [key]: val } : sp)); setRcError(''); }
+  function setSplit(i, key, val) {
+    const v = key === 'custom' ? titleCase(val) : val;
+    onSetField('paySplits', paySplits.map((sp, x) => x === i ? { ...sp, [key]: v } : sp));
+    setRcError('');
+  }
 
   /* ── Document upload handlers ── */
   function addUploadRow() {

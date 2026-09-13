@@ -31,6 +31,7 @@ export const TOOTH_NUMBERS = [
   '2-1', '2-2', '2-3', '2-4', '2-5', '2-6', '2-7', '2-8',
   '3-1', '3-2', '3-3', '3-4', '3-5', '3-6', '3-7', '3-8',
   '4-1', '4-2', '4-3', '4-4', '4-5', '4-6', '4-7', '4-8',
+  'Maxillary arch', 'Mandibular arch',
 ];
 
 export const TOOTH_NUMBERS_KID = [
@@ -38,6 +39,7 @@ export const TOOTH_NUMBERS_KID = [
   '6-1', '6-2', '6-3', '6-4', '6-5',
   '7-1', '7-2', '7-3', '7-4', '7-5',
   '8-1', '8-2', '8-3', '8-4', '8-5',
+  'Maxillary arch', 'Mandibular arch',
 ];
 
 export const PATIENT_TYPES = ['Adult', 'Kid'];
@@ -46,7 +48,7 @@ export const PAYMENT_MODES = ['Cash', 'UPI', 'Debit Card', 'Credit Card'];
 export const YES_NO = ['Yes', 'No'];
 export const TREATMENT_STAGES = ['Complete', 'In Progress', 'Follow Up Pending'];
 
-export const MEDICINE_FORMS = ['Tablet', 'Capsule', 'Syrup', 'Gel', 'Ointment', 'Mouthwash', 'Injection', 'Drops', 'Powder', 'Spray'];
+export const MEDICINE_FORMS = ['Tablet', 'Capsule', 'Syrup', 'Gel', 'Ointment', 'Mouthwash', 'Toothpaste', 'Injection', 'Drops', 'Powder', 'Spray'];
 export const FOOD_OPTIONS = ['After Food', 'Before Food'];
 export const DOC_KINDS = ['X-Ray', 'Prescription', 'Medical report', 'Other'];
 export const SPLIT_CATEGORIES = ['Treatment', 'X-ray', 'OPD', 'Medicine', 'Lab work', 'Custom'];
