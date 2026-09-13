@@ -38,8 +38,15 @@ async function renderUrlToPdf(url) {
 }
 
 async function downloadAsPdf(url, filename) {
-  const pdf = await renderUrlToPdf(url);
-  pdf.save(filename);
+  try {
+    const pdf = await renderUrlToPdf(url);
+    pdf.save(filename);
+  } catch (e) {
+    // Never fail silently — a dead-looking button is worse than a fallback.
+    console.error('PDF download failed:', e);
+    window.open(url, '_blank');
+    alert('Could not build the PDF automatically, so the document was opened in a new tab.\nUse your browser\u2019s Print \u2192 "Save as PDF" from there.');
+  }
 }
 
 // Print via a real PDF (MFP printers reliably print PDFs, not browser HTML jobs).

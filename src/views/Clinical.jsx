@@ -38,7 +38,7 @@ async function renderUrlToPdf(url) {
     pdf.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', 5, -y + 5, imgW, imgH);
     y += pageH - 10;
   }
-  pdf.save(filename);
+  return pdf;
 }
 
 // Capture an already-rendered on-screen element to a PDF (used when there is no
@@ -62,12 +62,19 @@ async function downloadElementAsPdf(elementId, filename) {
     pdf.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', 5, -y + 5, imgW, imgH);
     y += pageH - 10;
   }
-  return pdf;
+  pdf.save(filename);
 }
 
 async function downloadAsPdf(url, filename) {
-  const pdf = await renderUrlToPdf(url);
-  pdf.save(filename);
+  try {
+    const pdf = await renderUrlToPdf(url);
+    pdf.save(filename);
+  } catch (e) {
+    // Never fail silently — a dead-looking button is worse than a fallback.
+    console.error('PDF download failed:', e);
+    window.open(url, '_blank');
+    alert('Could not build the PDF automatically, so the document was opened in a new tab.\nUse your browser’s Print → "Save as PDF" from there.');
+  }
 }
 
 // Print a server-generated document by converting it to a real PDF first — networked
