@@ -438,7 +438,10 @@ function buildRx(cf, meta) {
     meds: (cf.medicines || []).filter(m => m.name).map((m, i) => ({
       sn: i + 1, name: m.name, unit: m.unit, dose: medDoseText(m),
       food: m.food, duration: m.duration ? (m.duration + ' days') : '—', total: medTotal(m),
+      remarks: m.remarks || '',
     })),
+    // Drives the optional Remarks column — hidden entirely when no medicine has any.
+    anyRemarks: (cf.medicines || []).some(m => m.name && m.remarks),
     hasMeds: (cf.medicines || []).some(m => m.name),
     noMeds: !(cf.medicines || []).some(m => m.name),
     comments: cf.comments || '',
@@ -498,7 +501,7 @@ function PrescriptionSheet({ rx, onClose, clinicName, clinicAddress, doctorName,
       treatment: rx.treatment, advisedTreatment: rx.advisedTreatment,
       medicalHistory: rx.medicalHistory,
       comments: rx.comments,
-      medicines: (rx.meds || []).map(m => ({ name: m.name, unit: m.unit, dose: m.dose, food: m.food, duration: m.duration })),
+      medicines: (rx.meds || []).map(m => ({ name: m.name, unit: m.unit, dose: m.dose, food: m.food, duration: m.duration, remarks: m.remarks })),
     };
     generatePrescriptionPdf(visitData)
       .then(res => { setDocxUrl(res.url); setDocxFormat(res.format); })
@@ -631,6 +634,7 @@ function PrescriptionSheet({ rx, onClose, clinicName, clinicAddress, doctorName,
                     <th style={{ padding: hasImageTemplate ? '4px 4px' : '8px 6px', fontWeight: 700 }}>Dosage</th>
                     <th style={{ padding: hasImageTemplate ? '4px 4px' : '8px 6px', fontWeight: 700 }}>Food</th>
                     <th style={{ padding: hasImageTemplate ? '4px 4px' : '8px 6px', fontWeight: 700 }}>Duration</th>
+                    {rx.anyRemarks && <th style={{ padding: hasImageTemplate ? '4px 4px' : '8px 6px', fontWeight: 700 }}>Remarks</th>}
                   </tr></thead>
                   <tbody>
                     {rx.meds.map((rm) => (
@@ -640,6 +644,7 @@ function PrescriptionSheet({ rx, onClose, clinicName, clinicAddress, doctorName,
                         <td style={{ padding: hasImageTemplate ? '4px 4px' : '9px 6px', color: '#33534f' }}>{rm.dose} <span style={{ color: '#98b0ab' }}>{rm.total}</span></td>
                         <td style={{ padding: hasImageTemplate ? '4px 4px' : '9px 6px', color: '#33534f' }}>{rm.food}</td>
                         <td style={{ padding: hasImageTemplate ? '4px 4px' : '9px 6px', color: '#33534f' }}>{rm.duration}</td>
+                        {rx.anyRemarks && <td style={{ padding: hasImageTemplate ? '4px 4px' : '9px 6px', color: '#33534f' }}>{rm.remarks}</td>}
                       </tr>
                     ))}
                   </tbody>
@@ -966,7 +971,7 @@ export default function Clinical({
           { k: 'Current treatment', v: trTeethLabel(nc) || trLabel(nc) || '—' },
           { k: 'Tooth number', v: listLabel(nc.toothNumber, '—') },
           { k: 'Medicines', v: (nc.medicines || []).filter(m => m.name).length
-            ? (nc.medicines || []).filter(m => m.name).map(m => m.name + ' — ' + medDoseText(m) + ', ' + m.food + (m.duration ? ', ' + m.duration + ' days' : '')).join(' · ')
+            ? (nc.medicines || []).filter(m => m.name).map(m => m.name + ' — ' + medDoseText(m) + ', ' + m.food + (m.duration ? ', ' + m.duration + ' days' : '') + (m.remarks ? ' (' + m.remarks + ')' : '')).join(' · ')
             : '—' },
           { k: 'Treatment cost', v: nc.treatmentCost ? inr(num(nc.treatmentCost)) : '—' },
           { k: 'Amount paid', v: nc.amountPaid ? inr(num(nc.amountPaid)) : '—' },
@@ -1206,6 +1211,10 @@ export default function Clinical({
                             ))}
                           </div>
                           <p style={{ fontSize: 12.5, color: '#5c7a76', marginTop: 8 }}>{medDoseText(m)} · {m.food} {medTotal(m)}</p>
+                        </div>
+                        <div style={{ gridColumn: '1 / -1' }}>
+                          <label style={{ display: 'block', fontWeight: 700, fontSize: 12.5, marginBottom: 6 }}>Remarks / instructions</label>
+                          <input className="fld" value={m.remarks || ''} onChange={(e) => setMed(i, 'remarks', e.target.value)} placeholder="e.g. Complete the full course, do not chew" style={{ width: '100%', padding: '11px 13px', border: '1px solid #d6e7e3', borderRadius: 10, fontSize: 14.5, background: '#fff' }} />
                         </div>
                       </div>
                     </div>

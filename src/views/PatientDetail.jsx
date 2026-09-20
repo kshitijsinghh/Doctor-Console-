@@ -63,7 +63,7 @@ function buildDetailRows(v, p) {
   add('Tooth number', listLabel(c.toothNumber));
   const meds = (c.medicines || []).filter(m => m.name);
   if (meds.length) {
-    add('Medicines', meds.map(m => m.name + ' — ' + medDoseText(m) + ', ' + m.food + (m.duration ? ', ' + m.duration + ' days' : '')).join(' · '));
+    add('Medicines', meds.map(m => m.name + ' — ' + medDoseText(m) + ', ' + m.food + (m.duration ? ', ' + m.duration + ' days' : '') + (m.remarks ? ' (' + m.remarks + ')' : '')).join(' · '));
   }
   if (num(c.treatmentCost)) add('Treatment cost', inr(num(c.treatmentCost)));
   if (num(c.amountPaid)) add('Amount paid', inr(num(c.amountPaid)));
