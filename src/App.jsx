@@ -45,7 +45,9 @@ function fmtTime(t) {
 function blankClinical() {
   return {
     chiefComplaint: [], chiefDescription: '', patientProblem: '', medicalHistory: '',
-    toothNumber: [], treatmentGroup: [], treatment: [], treatmentOther: '',
+    diagnosis: '', investigation: '',
+    toothNumber: [], treatmentTeeth: {}, advisedTeeth: {},
+    treatmentGroup: [], treatment: [], treatmentOther: '',
     advisedTreatment: [], medicines: [], documents: [], paySplits: [],
     labName: '', labToothNumber: '', labDescription: '',
     treatmentCost: '', amountPaid: '', balanceDue: '', paymentMode: '', paymentStatus: '',
@@ -58,11 +60,22 @@ function tryParseJson(v) {
   }
   return v;
 }
+function tryParseObj(v) {
+  if (typeof v === 'string' && v.startsWith('{')) {
+    try { const p = JSON.parse(v); if (p && typeof p === 'object' && !Array.isArray(p)) return p; } catch {}
+  }
+  return v;
+}
 function normalizeClinical(c) {
   const out = { ...blankClinical(), ...c };
   ['chiefComplaint', 'treatmentGroup', 'treatment', 'advisedTreatment', 'toothNumber'].forEach(k => {
     let v = tryParseJson(out[k]);
     out[k] = Array.isArray(v) ? v : (v ? [v] : []);
+  });
+  // Legacy records predate per-treatment tooth tagging — normalize to {}.
+  ['treatmentTeeth', 'advisedTeeth'].forEach(k => {
+    const v = tryParseObj(out[k]);
+    out[k] = (v && typeof v === 'object' && !Array.isArray(v)) ? v : {};
   });
   out.medicines = Array.isArray(out.medicines) ? out.medicines : tryParseJson(out.medicines) || [];
   out.paySplits = Array.isArray(out.paySplits) ? out.paySplits : tryParseJson(out.paySplits) || [];
@@ -130,6 +143,10 @@ export default function App({ user, onLogout }) {
           medicalHistory: savedForm.medicalHistory || '',
           chiefComplaint: savedForm.chiefComplaint || '',
           chiefDescription: savedForm.chiefDescription || '',
+          diagnosis: savedForm.diagnosis || '',
+          investigation: savedForm.investigation || '',
+          treatmentTeeth: savedForm.treatmentTeeth || {},
+          advisedTeeth: savedForm.advisedTeeth || {},
           treatmentGroup: savedForm.treatmentGroup || '',
           treatment: savedForm.treatment || '',
           advisedTreatment: savedForm.advisedTreatment || '',

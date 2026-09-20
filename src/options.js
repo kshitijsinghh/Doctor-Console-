@@ -42,6 +42,29 @@ export const TOOTH_NUMBERS_KID = [
   'Maxillary arch', 'Mandibular arch',
 ];
 
+// FDI quadrants for the per-treatment tooth picker. Each quadrant's numbers are
+// ordered outward from the midline and aligned toward it, so the 2x2 grid reads
+// like a real mouth.
+function fdiRange(from, to, reverse) {
+  const lo = Math.min(from, to);
+  const out = Array.from({ length: Math.abs(to - from) + 1 }, (_, i) => String(lo + i));
+  return reverse ? out.reverse() : out;
+}
+
+export const FDI_QUADRANTS = [
+  { label: 'Upper right', list: fdiRange(11, 18, true), align: 'flex-end' },
+  { label: 'Upper left', list: fdiRange(21, 28, false), align: 'flex-start' },
+  { label: 'Lower right', list: fdiRange(41, 48, true), align: 'flex-end' },
+  { label: 'Lower left', list: fdiRange(31, 38, false), align: 'flex-start' },
+];
+
+export const FDI_PRIMARY_QUADRANTS = [
+  { label: 'Upper right', list: ['55', '54', '53', '52', '51'], align: 'flex-end' },
+  { label: 'Upper left', list: ['61', '62', '63', '64', '65'], align: 'flex-start' },
+  { label: 'Lower right', list: ['85', '84', '83', '82', '81'], align: 'flex-end' },
+  { label: 'Lower left', list: ['71', '72', '73', '74', '75'], align: 'flex-start' },
+];
+
 export const PATIENT_TYPES = ['Adult', 'Kid'];
 
 export const PAYMENT_MODES = ['Cash', 'UPI', 'Debit Card', 'Credit Card'];

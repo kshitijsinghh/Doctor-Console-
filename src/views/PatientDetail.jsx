@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { buildRx, buildReceipt, normalizeClinical, ReceiptSheet, PrescriptionSheet } from './Clinical';
+import { buildRx, buildReceipt, normalizeClinical, ReceiptSheet, PrescriptionSheet, trTeethLabel, advTeethLabel } from './Clinical';
 import { getDocumentUrl } from '../api';
 
 function num(x) { const n = parseFloat(x); return isNaN(n) ? 0 : n; }
@@ -55,9 +55,11 @@ function buildDetailRows(v, p) {
   add('Medical history', c.medicalHistory);
   add('Chief complaint', listLabel(c.chiefComplaint));
   add('Description', c.chiefDescription);
+  add('Diagnosis', c.diagnosis);
+  add('Advised treatment', advTeethLabel(c) || listLabel(c.advisedTreatment));
+  add('Investigation', c.investigation);
   add('Treatment group', listLabel(c.treatmentGroup));
-  add('Current treatment', trLabel(c));
-  add('Advised treatment', listLabel(c.advisedTreatment));
+  add('Current treatment', trTeethLabel(c) || trLabel(c));
   add('Tooth number', listLabel(c.toothNumber));
   const meds = (c.medicines || []).filter(m => m.name);
   if (meds.length) {
