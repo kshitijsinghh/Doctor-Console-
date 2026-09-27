@@ -429,6 +429,18 @@ function teethMapLabel(c, listField, mapField) {
   }).join(' · ');
 }
 function trTeethLabel(c) { return teethMapLabel(c, 'treatment', 'treatmentTeeth'); }
+
+// One payment-split line per treatment marked in the Doctor's form, named like
+// "RCT (32, 21)" — or just "Composite Restoration" when no teeth are tagged.
+// Custom lines carry the name as-is, so the receipt prints it unchanged.
+function treatmentSplitLines(c) {
+  const map = (c && c.treatmentTeeth) || {};
+  return asList(c && c.treatment).map((t) => {
+    const name = /Other/.test(t) && c.treatmentOther ? c.treatmentOther : t;
+    const teeth = asList(map[t]);
+    return { category: 'Custom', custom: teeth.length ? name + ' (' + teeth.join(', ') + ')' : name, amount: '' };
+  });
+}
 function advTeethLabel(c) { return teethMapLabel(c, 'advisedTreatment', 'advisedTeeth'); }
 
 // toothNumber is no longer edited directly — it is the sorted union of every
@@ -958,6 +970,8 @@ export default function Clinical({
   }
 
   /* ── Split handlers ── */
+  const treatmentLines = treatmentSplitLines(cform);
+  function splitByTreatment() { onSetField('paySplits', treatmentLines); setRcError(''); }
   function addSplit() { onSetField('paySplits', [...paySplits, { category: 'Treatment', custom: '', amount: '' }]); setRcError(''); }
   function removeSplit(i) { onSetField('paySplits', paySplits.filter((_, x) => x !== i)); setRcError(''); }
   function setSplit(i, key, val) {
@@ -1420,6 +1434,12 @@ export default function Clinical({
               </p>
             )}
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 14 }}>
+              {paySplits.length === 0 && (
+                <button onClick={splitByTreatment} disabled={!treatmentLines.length} title={treatmentLines.length ? 'One line item per treatment marked in the Doctor\'s form' : 'Select treatments in the Doctor\'s form first'} style={{ padding: '9px 15px', borderRadius: 10, border: 0, background: treatmentLines.length ? '#0e756c' : '#f0f4f3', color: treatmentLines.length ? '#fff' : '#98b0ab', fontWeight: 700, fontSize: 13.5, cursor: treatmentLines.length ? 'pointer' : 'not-allowed', display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 6h16M4 12h10M4 18h7"/></svg>
+                  Split payment
+                </button>
+              )}
               <button onClick={addSplit} style={{ padding: '9px 15px', borderRadius: 10, border: '1px dashed #cfe3df', background: '#f7fbfa', color: '#0e756c', fontWeight: 700, fontSize: 13.5, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 7 }}>
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round"><path d="M12 5v14M5 12h14"/></svg>
                 Add line item
