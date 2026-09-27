@@ -117,28 +117,45 @@ function MultiSelect({ value, options, onChange, placeholder, disabled, allowOth
   const arr = Array.isArray(value) ? value : (value ? String(value).split(', ').filter(Boolean) : []);
   const stdOptions = allowOther ? options.filter((o) => o !== 'Other') : options;
   const stdSelected = arr.filter((t) => stdOptions.includes(t));
-  let isOtherOn = false, otherText = '';
-  if (allowOther) {
-    const custom = arr.filter((t) => !stdOptions.includes(t) && t !== 'Other');
-    isOtherOn = arr.includes('Other') || custom.length > 0;
-    otherText = custom.join(', ');
+
+  // Free-text entries are simply array items that are not one of the preset
+  // options — the stored shape already supports any number of them. They are
+  // held in local state while being typed so a half-typed entry never reaches
+  // the record, and an empty row can exist in the UI without creating a blank
+  // chip.
+  const customsFromValue = allowOther ? arr.filter((t) => !stdOptions.includes(t)) : [];
+  const [drafts, setDrafts] = useState(customsFromValue);
+
+  // Resync when the value changes from outside (a different visit is loaded).
+  // Skipped when our own edit produced the change, so typing is not clobbered.
+  const externalKey = customsFromValue.join('\u0000');
+  const draftKey = drafts.filter((d) => d.trim()).join('\u0000');
+  useEffect(() => {
+    if (externalKey !== draftKey) setDrafts(customsFromValue);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [externalKey]);
+
+  const displayChips = allowOther ? [...stdSelected, ...drafts.filter((d) => d.trim())] : arr;
+
+  function emit(std, nextDrafts) {
+    onChange([...std, ...nextDrafts.filter((d) => d.trim())]);
   }
-  const displayChips = allowOther
-    ? [...stdSelected, ...(isOtherOn ? (otherText ? [otherText] : ['Other']) : [])]
-    : arr;
-  function emit(std, oText, oOn) {
-    const parts = [...std];
-    if (oOn) parts.push(oText || 'Other');
-    onChange(parts);
-  }
+  function setDrafted(next) { setDrafts(next); emit(stdSelected, next); }
+  function addOther() { setDrafts([...drafts, '']); }
+  function setOtherAt(i, text) { setDrafted(drafts.map((d, x) => (x === i ? text : d))); }
+  function removeOtherAt(i) { setDrafted(drafts.filter((_, x) => x !== i)); }
+
   function toggle(opt) {
-    if (allowOther && opt === 'Other') { emit(stdSelected, '', !isOtherOn); return; }
     const base = allowOther ? stdSelected : arr;
     const next = base.includes(opt) ? base.filter((s) => s !== opt) : [...base, opt];
-    if (allowOther) emit(next, otherText, isOtherOn); else onChange(next);
+    if (allowOther) emit(next, drafts); else onChange(next);
   }
   function removeChip(chip) {
-    if (allowOther && !stdOptions.includes(chip)) { emit(stdSelected, '', false); return; }
+    if (allowOther && !stdOptions.includes(chip)) {
+      const i = drafts.findIndex((d) => d === chip);
+      if (i >= 0) removeOtherAt(i);
+      return;
+    }
     toggle(chip);
   }
   const filtered = searchable && search ? stdOptions.filter((o) => o.toLowerCase().includes(search.toLowerCase())) : stdOptions;
@@ -179,17 +196,33 @@ function MultiSelect({ value, options, onChange, placeholder, disabled, allowOth
               );
             })}
             {allowOther && (!search || 'other'.includes(search.toLowerCase())) && (
-              <>
-                <div onClick={() => toggle('Other')} style={{ padding: '10px 14px', cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', gap: 10, background: isOtherOn ? '#eef7f6' : '#fff', borderBottom: '1px solid #f0f6f5' }}>
-                  {checkBox(isOtherOn)}
-                  <span style={{ color: isOtherOn ? '#0e3b39' : '#5c7a76', fontWeight: isOtherOn ? 600 : 400 }}>Other</span>
-                </div>
-                {isOtherOn && (
-                  <div style={{ padding: '4px 14px 10px', background: '#eef7f6' }}>
-                    <input value={otherText} onChange={(e) => emit(stdSelected, e.target.value, true)} onClick={(e) => e.stopPropagation()} placeholder="Type here…" autoFocus style={{ width: '100%', padding: '8px 10px', border: '1px solid #d6e7e3', borderRadius: 8, fontSize: 14, background: '#fff' }} />
+              <div style={{ background: '#eef7f6', borderTop: '1px solid #e2efec' }}>
+                {drafts.map((d, i) => (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px' }}>
+                    <input
+                      value={d}
+                      onChange={(e) => setOtherAt(i, e.target.value)}
+                      onClick={(e) => e.stopPropagation()}
+                      placeholder="Type here…"
+                      autoFocus={i === drafts.length - 1 && d === ''}
+                      style={{ flex: 1, padding: '8px 10px', border: '1px solid #d6e7e3', borderRadius: 8, fontSize: 14, background: '#fff' }}
+                    />
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); removeOtherAt(i); }}
+                      title="Remove"
+                      style={{ width: 28, height: 28, flexShrink: 0, borderRadius: 8, border: '1px solid #f0d9d3', background: '#fdf0ec', color: '#c0392b', cursor: 'pointer', fontSize: 13, lineHeight: 1 }}
+                    >&times;</button>
                   </div>
-                )}
-              </>
+                ))}
+                <div
+                  onClick={(e) => { e.stopPropagation(); addOther(); }}
+                  style={{ padding: '10px 14px', cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', gap: 8, color: '#0e756c', fontWeight: 700 }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
+                  Add Other
+                </div>
+              </div>
             )}
             {searchable && search && filtered.length === 0 && <div style={{ padding: 14, color: '#98b0ab', fontSize: 14, textAlign: 'center' }}>No matches</div>}
           </div>
