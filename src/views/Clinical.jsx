@@ -4,7 +4,7 @@ import {
   MEDICINE_FORMS, FOOD_OPTIONS, DOC_KINDS, SPLIT_CATEGORIES, FDI_QUADRANTS, FDI_PRIMARY_QUADRANTS,
 } from '../options';
 import { TOUCH_BTN, FLUID_GRID_2COL } from '../styles';
-import { getUploadUrl, uploadToS3, getDocumentUrl, generatePrescriptionPdf, generateReceiptPdf, savePayment, getClinicId } from '../api';
+import { getUploadUrl, uploadToS3, getDocumentUrl, generatePrescriptionPdf, generateReceiptPdf, savePayment, getClinicId, logEvent } from '../api';
 
 // Rasterize a server-generated HTML document (fetched from its URL) into a jsPDF instance.
 async function renderUrlToPdf(url) {
@@ -915,7 +915,29 @@ export default function Clinical({
           await uploadToS3(result.uploadUrl, file);
           return { name: file.name, kind, rowId, type: file.type || '', s3Key: result.key, at: Date.now() };
         }
-      } catch { /* fall through to base64 */ }
+        // Null rather than a throw: AWS_URL or CLINIC_ID missing from the build.
+        logEvent({
+          kind: 'document_upload_fallback', severity: 'data_loss_risk',
+          visitId, fileName: file && file.name, fileBytes: file && file.size,
+          docKind: kind, error: 'getUploadUrl returned null (AWS not configured for this build)',
+        });
+      } catch (err) {
+        // The base64 fallback below looks like a safety net but is not one:
+        // App.jsx strips `dataUrl` before saving (the sheet cell cannot hold
+        // it), so the stored record ends up with neither s3Key nor dataUrl and
+        // the document is silently lost. Log it loudly — this is data loss the
+        // doctor is never shown.
+        logEvent({
+          kind: 'document_upload_fallback',
+          severity: 'data_loss_risk',
+          visitId,
+          fileName: file && file.name,
+          fileBytes: file && file.size,
+          fileType: file && file.type,
+          docKind: kind,
+          error: String((err && err.message) || err),
+        });
+      }
       return new Promise((resolve) => {
         const r = new FileReader();
         r.onload = () => resolve({ name: file.name, kind, rowId, type: file.type || '', dataUrl: String(r.result || ''), at: Date.now() });

@@ -334,18 +334,59 @@ export function savePayment({ visitId, patientId, patientName, mobile, date, tre
 
 // ── AWS Backend API ──
 
-async function awsJson(url, opts) {
-  const res = await fetch(url, opts);
-  if (!res.ok) throw new Error('AWS API error: ' + res.status);
+// Every AWS call is timed and reported on failure or slowness, same as the
+// Apps Script path. Without this the whole document-upload and PDF-generation
+// surface is invisible — which is where the "document not saved" reports came
+// from.
+async function awsJson(url, opts, ctx) {
+  const t0 = Date.now();
+  const op = (ctx && ctx.op) || 'aws';
+  let res;
+  try {
+    res = await fetchWithTimeout(url, opts);
+  } catch (err) {
+    const timedOut = err && (err.name === 'AbortError' || /abort/i.test(String(err.message || '')));
+    logEvent({
+      kind: 'aws_request', op, method: (opts && opts.method) || 'GET',
+      outcome: timedOut ? 'timeout' : 'network_error',
+      error: String((err && err.message) || err), ms: Date.now() - t0,
+      ...(ctx && ctx.meta ? ctx.meta : {}),
+    });
+    throw err;
+  }
+  const ms = Date.now() - t0;
+  if (!res.ok) {
+    let bodyText = '';
+    try { bodyText = await res.text(); } catch { /* ignore */ }
+    logEvent({
+      kind: 'aws_request', op, method: (opts && opts.method) || 'GET',
+      outcome: 'http_error', httpStatus: res.status, ms,
+      responseBody: LOG_BODIES ? clip(bodyText, 2000) : undefined,
+      ...(ctx && ctx.meta ? ctx.meta : {}),
+    });
+    throw new Error('AWS API error: ' + res.status);
+  }
   const json = await res.json();
-  if (!json.ok) throw new Error(json.error || 'AWS API error');
+  if (!json.ok) {
+    logEvent({
+      kind: 'aws_request', op, method: (opts && opts.method) || 'GET',
+      outcome: 'api_error', httpStatus: res.status, ms,
+      serverError: String(json.error || ''),
+      ...(ctx && ctx.meta ? ctx.meta : {}),
+    });
+    throw new Error(json.error || 'AWS API error');
+  }
+  if (ms > SLOW_MS) {
+    logEvent({ kind: 'aws_request', op, outcome: 'ok', httpStatus: res.status, ms, slow: true,
+      ...(ctx && ctx.meta ? ctx.meta : {}) });
+  }
   return json;
 }
 
 export async function fetchOrg() {
   if (!AWS_URL || !CLINIC_ID) return null;
   try {
-    const json = await awsJson(`${AWS_URL}/org/${CLINIC_ID}`);
+    const json = await awsJson(`${AWS_URL}/org/${CLINIC_ID}`, undefined, { op: 'fetchOrg' });
     return json.org;
   } catch { return null; }
 }
@@ -356,29 +397,50 @@ export async function getUploadUrl({ visitId, fileName, fileType, docKind }) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ clinicId: CLINIC_ID, visitId, fileName, fileType, docKind }),
-  });
+  }, { op: 'getUploadUrl', meta: { visitId, fileName, fileType, docKind } });
 }
 
 export async function uploadToS3(uploadUrl, file) {
-  const res = await fetch(uploadUrl, {
-    method: 'PUT',
-    headers: { 'Content-Type': file.type || 'application/octet-stream' },
-    body: file,
-  });
-  if (!res.ok) throw new Error('S3 upload failed: ' + res.status);
+  const t0 = Date.now();
+  // File name/size/type only — never the contents.
+  const meta = { fileName: file && file.name, fileBytes: file && file.size, fileType: file && file.type };
+  let res;
+  try {
+    res = await fetchWithTimeout(uploadUrl, {
+      method: 'PUT',
+      headers: { 'Content-Type': file.type || 'application/octet-stream' },
+      body: file,
+    });
+  } catch (err) {
+    const timedOut = err && (err.name === 'AbortError' || /abort/i.test(String(err.message || '')));
+    logEvent({ kind: 'aws_request', op: 's3Put', method: 'PUT',
+      outcome: timedOut ? 'timeout' : 'network_error',
+      error: String((err && err.message) || err), ms: Date.now() - t0, ...meta });
+    throw err;
+  }
+  const ms = Date.now() - t0;
+  if (!res.ok) {
+    logEvent({ kind: 'aws_request', op: 's3Put', method: 'PUT',
+      outcome: 'http_error', httpStatus: res.status, ms, ...meta });
+    throw new Error('S3 upload failed: ' + res.status);
+  }
+  if (ms > SLOW_MS) {
+    logEvent({ kind: 'aws_request', op: 's3Put', method: 'PUT', outcome: 'ok',
+      httpStatus: res.status, ms, slow: true, ...meta });
+  }
 }
 
 export async function getDocumentUrl(key) {
   if (!AWS_URL) return null;
   const safePath = key.split('/').map(encodeURIComponent).join('/');
-  const json = await awsJson(`${AWS_URL}/document/${safePath}`);
+  const json = await awsJson(`${AWS_URL}/document/${safePath}`, undefined, { op: 'getDocumentUrl' });
   return json.url;
 }
 
 export async function getRxTemplateUrl() {
   if (!AWS_URL || !CLINIC_ID) return null;
   try {
-    const json = await awsJson(`${AWS_URL}/org/${CLINIC_ID}/rx-template`);
+    const json = await awsJson(`${AWS_URL}/org/${CLINIC_ID}/rx-template`, undefined, { op: 'rxTemplate' });
     return json.url;
   } catch { return null; }
 }
@@ -389,14 +451,14 @@ export async function generatePrescriptionPdf(visitData) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ clinicId: CLINIC_ID, type: 'prescription', visitData }),
-  });
+  }, { op: 'generatePrescriptionPdf', meta: { visitId: visitData && visitData.visitId } });
   return json;
 }
 
 export async function getReceiptTemplateUrl() {
   if (!AWS_URL || !CLINIC_ID) return null;
   try {
-    const json = await awsJson(`${AWS_URL}/org/${CLINIC_ID}/receipt-template`);
+    const json = await awsJson(`${AWS_URL}/org/${CLINIC_ID}/receipt-template`, undefined, { op: 'receiptTemplate' });
     return json.url;
   } catch { return null; }
 }
@@ -418,9 +480,11 @@ export async function generateReceiptPdf(visitData) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ clinicId: CLINIC_ID, type: 'receipt', visitData }),
-  });
+  }, { op: 'generateReceiptPdf', meta: { visitId: visitData && visitData.visitId } });
   return json;
 }
+
+export { logEvent };
 
 export function getClinicId() {
   return CLINIC_ID || '';
