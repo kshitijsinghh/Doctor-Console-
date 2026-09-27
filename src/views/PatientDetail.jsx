@@ -279,6 +279,9 @@ export default function PatientDetail({ patient, patientId, onGoBack, onRenamePa
           <p style={{ color: '#bfe3dd', fontSize: 14, marginTop: 2 }}>
             {p.mobile} · {p.visits.length} visit(s)
           </p>
+          {!!p.address && (
+            <p style={{ color: '#bfe3dd', fontSize: 13.5, marginTop: 4, maxWidth: 420, lineHeight: 1.45 }}>{p.address}</p>
+          )}
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'flex-end' }}>
           <span style={{ display: 'inline-block', padding: '5px 13px', borderRadius: 100, fontSize: 13, fontWeight: 700, background: stBg, color: stInk }}>{status}</span>

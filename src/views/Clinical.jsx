@@ -522,6 +522,54 @@ function buildReceipt(cf, meta) {
 }
 
 /* ── Print-ready Prescription sheet ── */
+// Download turns a server document (or the on-screen sheet) into a PDF via
+// html2canvas + jsPDF, which takes a few seconds on a large prescription. The
+// button gave no feedback at all, so doctors clicked it repeatedly.
+function DownloadButton({ onDownload, label }) {
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState('');
+  async function go() {
+    if (busy) return;
+    setBusy(true);
+    setFailed('');
+    try {
+      await onDownload();
+    } catch (err) {
+      setFailed(String((err && err.message) || 'Download failed'));
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <>
+      {/* Outside the button: a <style> child would land in its textContent and
+          pollute the accessible name. */}
+      <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
+    <button
+      onClick={go}
+      disabled={busy}
+      title={failed || undefined}
+      style={{
+        padding: '8px 15px', borderRadius: 9, border: 0,
+        background: busy ? '#0b7a72' : (failed ? '#c0392b' : '#12a094'),
+        color: '#fff', fontWeight: 700, fontSize: 13,
+        cursor: busy ? 'progress' : 'pointer',
+        display: 'inline-flex', alignItems: 'center', gap: 7, minWidth: 104, justifyContent: 'center',
+      }}
+    >
+      {busy && (
+        <span style={{
+          width: 13, height: 13, borderRadius: '50%', flexShrink: 0,
+          border: '2px solid rgba(255,255,255,.45)', borderTopColor: '#fff',
+          animation: 'spin .7s linear infinite',
+        }} />
+      )}
+      {busy ? 'Preparing…' : (failed ? 'Retry download' : (label || 'Download'))}
+    </button>
+    </>
+  );
+}
+
 function PrescriptionSheet({ rx, onClose, clinicName, clinicAddress, doctorName, doctorQualification, rxTemplateUrl, hasDocxTemplate }) {
   const hasImageTemplate = !!rxTemplateUrl && !hasDocxTemplate;
   const [docxUrl, setDocxUrl] = useState(null);
@@ -559,13 +607,13 @@ function PrescriptionSheet({ rx, onClose, clinicName, clinicAddress, doctorName,
               <button onClick={() => printAsPdf(docxUrl)} style={{ padding: '8px 15px', borderRadius: 9, border: '1px solid rgba(255,255,255,.3)', background: 'transparent', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Print</button>
             )}
             {hasDocxTemplate && docxUrl && (
-              <button onClick={() => downloadAsPdf(docxUrl, `Prescription_${rx.visitId || 'doc'}.pdf`)} style={{ padding: '8px 15px', borderRadius: 9, border: 0, background: '#12a094', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Download</button>
+              <DownloadButton onDownload={() => downloadAsPdf(docxUrl, `Prescription_${rx.visitId || 'doc'}.pdf`)} />
             )}
             {!hasDocxTemplate && (
               <button onClick={() => window.print()} style={{ padding: '8px 15px', borderRadius: 9, border: '1px solid rgba(255,255,255,.3)', background: 'transparent', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Print</button>
             )}
             {!hasDocxTemplate && (
-              <button onClick={() => downloadElementAsPdf('rx-print-body', `Prescription_${rx.visitId || 'doc'}.pdf`)} style={{ padding: '8px 15px', borderRadius: 9, border: 0, background: '#12a094', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Download</button>
+              <DownloadButton onDownload={() => downloadElementAsPdf('rx-print-body', `Prescription_${rx.visitId || 'doc'}.pdf`)} />
             )}
             <button onClick={onClose} style={{ width: 32, height: 32, borderRadius: 8, border: 0, background: 'rgba(255,255,255,.15)', color: '#fff', fontSize: 15, cursor: 'pointer' }}>✕</button>
           </div>
@@ -752,13 +800,13 @@ function ReceiptSheet({ receipt, onClose, clinicName, clinicAddress, doctorName,
               <button onClick={() => printAsPdf(docxUrl)} style={{ padding: '8px 15px', borderRadius: 9, border: '1px solid rgba(255,255,255,.3)', background: 'transparent', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Print</button>
             )}
             {hasReceiptTemplate && docxUrl && (
-              <button onClick={() => downloadAsPdf(docxUrl, `Receipt_${receipt.visitId || 'doc'}.pdf`)} style={{ padding: '8px 15px', borderRadius: 9, border: 0, background: '#12a094', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Download</button>
+              <DownloadButton onDownload={() => downloadAsPdf(docxUrl, `Receipt_${receipt.visitId || 'doc'}.pdf`)} />
             )}
             {!hasReceiptTemplate && (
               <button onClick={() => window.print()} style={{ padding: '8px 15px', borderRadius: 9, border: '1px solid rgba(255,255,255,.3)', background: 'transparent', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Print</button>
             )}
             {!hasReceiptTemplate && (
-              <button onClick={() => downloadElementAsPdf('rc-print-body', `Receipt_${receipt.visitId || 'doc'}.pdf`)} style={{ padding: '8px 15px', borderRadius: 9, border: 0, background: '#12a094', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Download</button>
+              <DownloadButton onDownload={() => downloadElementAsPdf('rc-print-body', `Receipt_${receipt.visitId || 'doc'}.pdf`)} />
             )}
             <button onClick={onClose} style={{ width: 32, height: 32, borderRadius: 8, border: 0, background: 'rgba(255,255,255,.15)', color: '#fff', fontSize: 15, cursor: 'pointer' }}>✕</button>
           </div>
@@ -876,6 +924,11 @@ export default function Clinical({
   const fileInputRef = useRef(null);
   const pendingRowRef = useRef(null);
   const [uploadingRowIds, setUploadingRowIds] = useState([]);
+  // Counted separately from uploadingRowIds: that list is keyed by the row that
+  // started the upload and stays EMPTY when rowId is null, so it cannot be used
+  // to decide whether a save is safe. This counter always reflects reality.
+  const [uploadsInFlight, setUploadsInFlight] = useState(0);
+  const uploadBusy = uploadsInFlight > 0;
 
   const medicines = cform.medicines || [];
   const paySplits = cform.paySplits || [];
@@ -947,6 +1000,7 @@ export default function Clinical({
     const visitId = cur.visitId;
 
     setUploadingRowIds(prev => rowId !== null ? [...prev, rowId] : prev);
+    setUploadsInFlight(n => n + 1);
 
     const uploadOne = async (file) => {
       try {
@@ -993,6 +1047,7 @@ export default function Clinical({
       onSetField('documents', [...existing, ...good]);
     }).finally(() => {
       setUploadingRowIds(prev => prev.filter(id => id !== rowId));
+      setUploadsInFlight(n => Math.max(0, n - 1));
       try { if (input) input.value = ''; } catch (err) {}
     });
   }
@@ -1488,7 +1543,7 @@ export default function Clinical({
           <p style={{ fontSize: 13, color: '#98b0ab', marginBottom: 12 }}>Attach X-rays, prescriptions or medical reports for this visit.</p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             <input ref={fileInputRef} type="file" accept="image/*,application/pdf" multiple onChange={onUploadDocs} style={{ display: 'none' }} />
-            {uploadingRowIds.length > 0 && <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>}
+            <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
             {uploadRows.map((ur) => {
               const rowDocs = documents.filter(d => d.rowId === ur.rowId);
               const hasFiles = rowDocs.length > 0;
@@ -1575,8 +1630,13 @@ export default function Clinical({
           <button onClick={() => { setStep(1); scrollToTop(); }} style={{ padding: '11px 20px', borderRadius: 10, border: '1px solid #cfe3df', background: '#f2f9f8', color: '#0e756c', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>← Back to Doctor's form</button>
           <div style={{ display: 'flex', gap: 12 }}>
             <button onClick={onGoBack} style={{ ...TOUCH_BTN, padding: '11px 20px', borderRadius: 10, border: '1px solid #d6e7e3', background: '#fff', color: '#5c7a76', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>Cancel</button>
-            <button onClick={onSaveClinical} disabled={saving || splitBlocked} style={{ ...TOUCH_BTN, padding: '11px 22px', borderRadius: 10, border: 0, background: (saving || splitBlocked) ? '#b8d0cd' : '#0e756c', color: '#fff', fontWeight: 700, fontSize: 14, cursor: (saving || splitBlocked) ? 'not-allowed' : 'pointer' }}>
-              {saving ? 'Saving…' : 'Save'}
+            {/* Saving mid-upload writes a document record with neither an
+                s3Key nor a dataUrl, so the file is silently lost. Block it. */}
+            <button onClick={onSaveClinical} disabled={saving || splitBlocked || uploadBusy} style={{ ...TOUCH_BTN, padding: '11px 22px', borderRadius: 10, border: 0, background: (saving || splitBlocked || uploadBusy) ? '#b8d0cd' : '#0e756c', color: '#fff', fontWeight: 700, fontSize: 14, cursor: (saving || splitBlocked || uploadBusy) ? 'not-allowed' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+              {uploadBusy && (
+                <span style={{ width: 13, height: 13, borderRadius: '50%', border: '2px solid rgba(255,255,255,.5)', borderTopColor: '#fff', animation: 'spin .7s linear infinite' }} />
+              )}
+              {saving ? 'Saving…' : (uploadBusy ? 'Uploading…' : 'Save')}
             </button>
           </div>
         </div>

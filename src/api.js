@@ -308,8 +308,8 @@ async function post(payload) {
   }
 }
 
-export function saveIntake({ mobile, name, age, gender, date }) {
-  return post({ action: 'saveIntake', mobile, name, age, gender, date });
+export function saveIntake({ mobile, name, age, gender, address, date }) {
+  return post({ action: 'saveIntake', mobile, name, age, gender, address, date });
 }
 
 // Edits a patient's details without creating a visit. Only the fields passed

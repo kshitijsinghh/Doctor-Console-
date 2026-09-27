@@ -227,6 +227,14 @@ export default function Intake({
                 type="number" min="0" max="120" placeholder="Years" style={fieldStyle}
               />
             </div>
+            <div style={{ gridColumn: '1 / -1' }}>
+              <label style={labelStyle}>Address</label>
+              <textarea
+                className="fld" value={form.address || ''} onChange={(e) => onSetField('address', e.target.value)}
+                placeholder="House / street, area, city, PIN" rows={2}
+                style={{ ...fieldStyle, minHeight: 62, resize: 'vertical' }}
+              />
+            </div>
           </div>
 
           {intakeError && (
