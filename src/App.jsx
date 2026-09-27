@@ -6,7 +6,7 @@ import Clinical from './views/Clinical';
 import Appointments from './views/Appointments';
 import Patients from './views/Patients';
 import PatientDetail from './views/PatientDetail';
-import { fetchList, saveIntake, saveClinical, uploadQr, getCachedList, fetchOrg, getRxTemplateUrl, generatePrescriptionPdf } from './api';
+import { fetchList, saveIntake, saveClinical, uploadQr, getCachedList, fetchOrg, getRxTemplateUrl, generatePrescriptionPdf, updatePatient } from './api';
 
 function today() {
   const d = new Date();
@@ -183,6 +183,18 @@ export default function App({ user, onLogout }) {
       });
       return { ...prev, patients: { ...prev.patients, [patientId]: { ...p, visits } } };
     });
+  }
+
+  // Applied locally on success: the server returns only a small ack, and the
+  // name is denormalised nowhere in the client model (views read patient.name).
+  async function onRenamePatient(patientId, name) {
+    const res = await updatePatient({ patientId, name });
+    setDbState(prev => {
+      const p = prev.patients[patientId];
+      if (!p) return prev;
+      return { ...prev, patients: { ...prev.patients, [patientId]: { ...p, name: res.name || name } } };
+    });
+    return res;
   }
 
   async function loadList(isRefresh) {
@@ -778,7 +790,7 @@ export default function App({ user, onLogout }) {
         {view === 'patientDetail' && detailPid && db.patients[detailPid] && (
           <PatientDetail
             patient={db.patients[detailPid]} patientId={detailPid}
-            onGoBack={goBack}
+            onGoBack={goBack} onRenamePatient={onRenamePatient}
             clinicName={org?.clinicName} clinicAddress={org ? [org.clinicAddress, ...(org.contactNumbers || []).map(n => '+91 ' + n)].filter(Boolean).join(' · ') : ''}
             doctorName={org?.doctorName} doctorQualification={org?.doctorQualification}
             rxTemplateUrl={rxTemplateUrl}

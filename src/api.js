@@ -312,6 +312,18 @@ export function saveIntake({ mobile, name, age, gender, date }) {
   return post({ action: 'saveIntake', mobile, name, age, gender, date });
 }
 
+// Edits a patient's details without creating a visit. Only the fields passed
+// are changed; the server also refreshes the denormalised copies on the
+// patient's visit rows.
+export function updatePatient({ patientId, name, age, gender, mobile }) {
+  const payload = { action: 'updatePatient', patientId, noSnapshot: true };
+  if (name !== undefined) payload.name = name;
+  if (age !== undefined) payload.age = age;
+  if (gender !== undefined) payload.gender = gender;
+  if (mobile !== undefined) payload.mobile = mobile;
+  return post(payload);
+}
+
 export function saveClinical({ patientId, visitId, cform }) {
   return post({ action: 'saveClinical', patientId, visitId, cform });
 }

@@ -23,7 +23,9 @@ export const TREATMENTS = [
   'Obturation', 'ICM', 'Core Build-up', 'Suture Removal', 'WL',
   'Surgical Extraction', 'Bridge Removal', 'Impression', 'Night Guard Delivery',
   'Temporary Restoration', 'Endocrown Preparation', 'Implant',
-  'Crown Removal', 'Re-RCT', 'Braces', 'Aligners', 'Other',
+  'Crown Removal', 'Re-RCT', 'Braces', 'Aligners',
+  'Pulpectomy', 'Stainless Steel Crown', 'IPC', 'SDF', 'Fluoride Application', 'Denture',
+  'Other',
 ];
 
 export const TOOTH_NUMBERS = [

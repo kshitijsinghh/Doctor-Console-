@@ -139,8 +139,12 @@ function FilesPopup({ filesVisit, patient, onClose }) {
   );
 }
 
-export default function PatientDetail({ patient, patientId, onGoBack, clinicName, clinicAddress, doctorName, doctorQualification, rxTemplateUrl, hasDocxTemplate, hasReceiptTemplate }) {
+export default function PatientDetail({ patient, patientId, onGoBack, onRenamePatient, clinicName, clinicAddress, doctorName, doctorQualification, rxTemplateUrl, hasDocxTemplate, hasReceiptTemplate }) {
   const [detailVisit, setDetailVisit] = useState(null);
+  const [editingName, setEditingName] = useState(false);
+  const [nameDraft, setNameDraft] = useState('');
+  const [savingName, setSavingName] = useState(false);
+  const [nameError, setNameError] = useState('');
   const [viewDoc, setViewDoc] = useState(null);
   const [filesVisit, setFilesVisit] = useState(null);
 
@@ -195,6 +199,24 @@ export default function PatientDetail({ patient, patientId, onGoBack, clinicName
 
   const detail = detailVisit ? buildDetailRows(detailVisit, p) : null;
 
+  async function saveName() {
+    const next = nameDraft.trim();
+    if (!next) { setNameError('Name cannot be empty.'); return; }
+    if (next === (p.name || '')) { setEditingName(false); return; }
+    setSavingName(true);
+    setNameError('');
+    try {
+      await onRenamePatient(patientId, next);
+      setEditingName(false);
+    } catch (err) {
+      // Surface the real reason rather than a generic failure.
+      const m = String((err && err.message) || '').trim();
+      setNameError(m ? (m.length > 140 ? m.slice(0, 140) + '…' : m) : 'Could not save the name. Please try again.');
+    } finally {
+      setSavingName(false);
+    }
+  }
+
   const chipStyle = { padding: '7px 13px', borderRadius: 9, border: '1px solid #cfe3df', background: '#f2f9f8', color: '#0e756c', fontWeight: 700, fontSize: 12.5, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 };
 
   return (
@@ -210,7 +232,47 @@ export default function PatientDetail({ patient, patientId, onGoBack, clinicName
       }}>
         <div style={{ minWidth: 0 }}>
           <span style={{ fontSize: 12, letterSpacing: '.14em', textTransform: 'uppercase', color: '#7fd4c9', fontWeight: 700 }}>Patient</span>
-          <h1 style={{ fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: 26, marginTop: 4 }}>{p.name}</h1>
+          {!editingName && (
+            <h1 style={{ fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: 26, marginTop: 4, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              {p.name}
+              {onRenamePatient && (
+                <button
+                  type="button"
+                  title="Edit patient name"
+                  onClick={() => { setNameDraft(p.name || ''); setNameError(''); setEditingName(true); }}
+                  style={{ width: 30, height: 30, flexShrink: 0, borderRadius: 8, border: '1px solid rgba(255,255,255,.35)', background: 'rgba(255,255,255,.14)', color: '#fff', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
+                >
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                  </svg>
+                </button>
+              )}
+            </h1>
+          )}
+          {editingName && (
+            <div style={{ marginTop: 6 }}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                <input
+                  value={nameDraft}
+                  onChange={(e) => { setNameDraft(e.target.value); setNameError(''); }}
+                  onKeyDown={(e) => { if (e.key === 'Enter') saveName(); if (e.key === 'Escape') setEditingName(false); }}
+                  autoFocus
+                  disabled={savingName}
+                  placeholder="Patient name"
+                  style={{ padding: '9px 12px', borderRadius: 10, border: '1px solid rgba(255,255,255,.4)', background: 'rgba(255,255,255,.15)', color: '#fff', fontSize: 18, fontWeight: 700, fontFamily: "'Bricolage Grotesque'", minWidth: 220, flex: '1 1 220px' }}
+                />
+                <button type="button" onClick={saveName} disabled={savingName}
+                  style={{ padding: '9px 16px', borderRadius: 10, border: 0, background: '#fff', color: '#0e756c', fontWeight: 700, fontSize: 13.5, cursor: savingName ? 'default' : 'pointer', opacity: savingName ? 0.7 : 1 }}>
+                  {savingName ? 'Saving…' : 'Save'}
+                </button>
+                <button type="button" onClick={() => { setEditingName(false); setNameError(''); }} disabled={savingName}
+                  style={{ padding: '9px 14px', borderRadius: 10, border: '1px solid rgba(255,255,255,.35)', background: 'transparent', color: '#fff', fontWeight: 700, fontSize: 13.5, cursor: 'pointer' }}>
+                  Cancel
+                </button>
+              </div>
+              {!!nameError && <p style={{ color: '#ffd5cc', fontSize: 13, fontWeight: 600, marginTop: 6 }}>{nameError}</p>}
+            </div>
+          )}
           <p style={{ color: '#bfe3dd', fontSize: 14, marginTop: 2 }}>
             <span style={{ fontFamily: 'ui-monospace,monospace' }}>{patientId}</span> · {ageGender}
           </p>

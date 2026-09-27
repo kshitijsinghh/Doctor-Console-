@@ -111,6 +111,13 @@ const roStyle = { opacity: 0.7, background: '#f0f4f3', cursor: 'default' };
 function num(x) { const n = parseFloat(x); return isNaN(n) ? 0 : n; }
 
 /* ── MultiSelect ── */
+// Switching between the Clinical and Billing steps swaps the page content but
+// leaves the window scrolled where it was, so the doctor lands halfway down the
+// new step. Reset it.
+function scrollToTop() {
+  try { window.scrollTo({ top: 0, behavior: 'auto' }); } catch { window.scrollTo(0, 0); }
+}
+
 function MultiSelect({ value, options, onChange, placeholder, disabled, allowOther, searchable }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -1130,8 +1137,8 @@ export default function Clinical({
       {/* ── Step switcher ── */}
       {!readOnly && (
         <div style={{ display: 'flex', gap: 8, marginTop: 16, background: '#fff', border: '1px solid #dfece9', borderRadius: 14, padding: 8 }}>
-          <button onClick={() => setStep(1)} style={{ flex: 1, padding: '11px 6px', borderRadius: 10, border: 0, cursor: 'pointer', fontWeight: 700, fontSize: 14, background: step === 1 ? '#0e756c' : 'transparent', color: step === 1 ? '#fff' : '#5c7a76' }}>1 · Clinical</button>
-          <button onClick={() => setStep(2)} style={{ flex: 1, padding: '11px 6px', borderRadius: 10, border: 0, cursor: 'pointer', fontWeight: 700, fontSize: 14, background: step === 2 ? '#0e756c' : 'transparent', color: step === 2 ? '#fff' : '#5c7a76' }}>2 · Billing & files</button>
+          <button onClick={() => { setStep(1); scrollToTop(); }} style={{ flex: 1, padding: '11px 6px', borderRadius: 10, border: 0, cursor: 'pointer', fontWeight: 700, fontSize: 14, background: step === 1 ? '#0e756c' : 'transparent', color: step === 1 ? '#fff' : '#5c7a76' }}>1 · Clinical</button>
+          <button onClick={() => { setStep(2); scrollToTop(); }} style={{ flex: 1, padding: '11px 6px', borderRadius: 10, border: 0, cursor: 'pointer', fontWeight: 700, fontSize: 14, background: step === 2 ? '#0e756c' : 'transparent', color: step === 2 ? '#fff' : '#5c7a76' }}>2 · Billing & files</button>
         </div>
       )}
 
@@ -1170,7 +1177,7 @@ export default function Clinical({
             </div>
             <div>
               <label style={labelStyle}>Advised treatment</label>
-              <MultiSelect value={cform.advisedTreatment} options={TREATMENTS} onChange={(v) => onSetField('advisedTreatment', v)} placeholder="Select…" disabled={readOnly} allowOther />
+              <MultiSelect value={cform.advisedTreatment} options={TREATMENTS} onChange={(v) => onSetField('advisedTreatment', v)} placeholder="Select…" disabled={readOnly} allowOther searchable />
             </div>
             <div style={{ gridColumn: '1 / -1' }}>
               <label style={{ ...labelStyle, marginBottom: 4 }}>Tooth number <span style={{ color: '#98b0ab', fontWeight: 400 }}>— per advised treatment</span></label>
@@ -1196,7 +1203,7 @@ export default function Clinical({
               {/* toothNumber is derived from the selected treatments, so it must be
                   recomputed when a treatment is added or removed, not only when a
                   tooth is tagged. */}
-              <MultiSelect value={cform.treatment} options={TREATMENTS} onChange={(v) => { onSetField('treatment', v); onSetField('toothNumber', deriveToothNumber(v, cform.treatmentTeeth)); }} placeholder="Select…" disabled={readOnly} allowOther />
+              <MultiSelect value={cform.treatment} options={TREATMENTS} onChange={(v) => { onSetField('treatment', v); onSetField('toothNumber', deriveToothNumber(v, cform.treatmentTeeth)); }} placeholder="Select…" disabled={readOnly} allowOther searchable />
             </div>
             {(Array.isArray(cform.treatment) ? cform.treatment : []).some(t => /Other/.test(t)) && (
               <div style={{ gridColumn: '1 / -1' }}>
@@ -1288,7 +1295,7 @@ export default function Clinical({
               </div>
               {/* Save and Next CTA (step 1 only) */}
               <div style={{ display: 'flex', gap: 12, marginTop: 22, justifyContent: 'flex-end' }}>
-                <button onClick={() => { if (onSaveAndNext) onSaveAndNext(); setStep(2); }} style={{ padding: '11px 22px', borderRadius: 10, border: 0, background: '#0e756c', color: '#fff', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>Save and Next →</button>
+                <button onClick={() => { if (onSaveAndNext) onSaveAndNext(); setStep(2); scrollToTop(); }} style={{ padding: '11px 22px', borderRadius: 10, border: 0, background: '#0e756c', color: '#fff', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>Save and Next →</button>
               </div>
             </>
           )}
@@ -1565,7 +1572,7 @@ export default function Clinical({
         </div>
       ) : step === 2 ? (
         <div style={{ display: 'flex', gap: 12, marginTop: 20, justifyContent: 'space-between', flexWrap: 'wrap' }}>
-          <button onClick={() => setStep(1)} style={{ padding: '11px 20px', borderRadius: 10, border: '1px solid #cfe3df', background: '#f2f9f8', color: '#0e756c', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>← Back to Doctor's form</button>
+          <button onClick={() => { setStep(1); scrollToTop(); }} style={{ padding: '11px 20px', borderRadius: 10, border: '1px solid #cfe3df', background: '#f2f9f8', color: '#0e756c', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>← Back to Doctor's form</button>
           <div style={{ display: 'flex', gap: 12 }}>
             <button onClick={onGoBack} style={{ ...TOUCH_BTN, padding: '11px 20px', borderRadius: 10, border: '1px solid #d6e7e3', background: '#fff', color: '#5c7a76', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>Cancel</button>
             <button onClick={onSaveClinical} disabled={saving || splitBlocked} style={{ ...TOUCH_BTN, padding: '11px 22px', borderRadius: 10, border: 0, background: (saving || splitBlocked) ? '#b8d0cd' : '#0e756c', color: '#fff', fontWeight: 700, fontSize: 14, cursor: (saving || splitBlocked) ? 'not-allowed' : 'pointer' }}>
