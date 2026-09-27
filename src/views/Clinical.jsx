@@ -971,6 +971,9 @@ export default function Clinical({
 
   /* ── Split handlers ── */
   const treatmentLines = treatmentSplitLines(cform);
+  // Split payment is offered first when treatments are marked; Add line item
+  // takes over once lines exist, or when there are no treatments to split by.
+  const showSplitButton = paySplits.length === 0 && treatmentLines.length > 0;
   function splitByTreatment() { onSetField('paySplits', treatmentLines); setRcError(''); }
   function addSplit() { onSetField('paySplits', [...paySplits, { category: 'Treatment', custom: '', amount: '' }]); setRcError(''); }
   function removeSplit(i) { onSetField('paySplits', paySplits.filter((_, x) => x !== i)); setRcError(''); }
@@ -1434,16 +1437,18 @@ export default function Clinical({
               </p>
             )}
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 14 }}>
-              {paySplits.length === 0 && (
-                <button onClick={splitByTreatment} disabled={!treatmentLines.length} title={treatmentLines.length ? 'One line item per treatment marked in the Doctor\'s form' : 'Select treatments in the Doctor\'s form first'} style={{ padding: '9px 15px', borderRadius: 10, border: 0, background: treatmentLines.length ? '#0e756c' : '#f0f4f3', color: treatmentLines.length ? '#fff' : '#98b0ab', fontWeight: 700, fontSize: 13.5, cursor: treatmentLines.length ? 'pointer' : 'not-allowed', display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+              {showSplitButton && (
+                <button onClick={splitByTreatment} title="One line item per treatment marked in the Doctor's form" style={{ padding: '9px 15px', borderRadius: 10, border: 0, background: '#0e756c', color: '#fff', fontWeight: 700, fontSize: 13.5, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 7 }}>
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 6h16M4 12h10M4 18h7"/></svg>
                   Split payment
                 </button>
               )}
-              <button onClick={addSplit} style={{ padding: '9px 15px', borderRadius: 10, border: '1px dashed #cfe3df', background: '#f7fbfa', color: '#0e756c', fontWeight: 700, fontSize: 13.5, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 7 }}>
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round"><path d="M12 5v14M5 12h14"/></svg>
-                Add line item
-              </button>
+              {!showSplitButton && (
+                <button onClick={addSplit} style={{ padding: '9px 15px', borderRadius: 10, border: '1px dashed #cfe3df', background: '#f7fbfa', color: '#0e756c', fontWeight: 700, fontSize: 13.5, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round"><path d="M12 5v14M5 12h14"/></svg>
+                  Add line item
+                </button>
+              )}
               <button onClick={openReceipt} style={{ padding: '9px 15px', borderRadius: 10, border: '1px solid #cfe3df', background: splitBlocked ? '#f0f4f3' : '#fff', color: splitBlocked ? '#98b0ab' : '#0e756c', fontWeight: 700, fontSize: 13.5, cursor: splitBlocked ? 'not-allowed' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: 7 }}>
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 2h12v20l-3-2-3 2-3-2-3 2V2z"/><path d="M9 8h6M9 12h6"/></svg>
                 Generate payment receipt
