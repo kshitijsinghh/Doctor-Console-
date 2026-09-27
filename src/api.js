@@ -111,12 +111,21 @@ function logEvent(record) {
     const url = `${AWS_URL}/log`;
     const small = body.length <= BEACON_MAX;
 
+    // text/plain, NOT application/json. application/json is not a
+    // CORS-safelisted content type, so it forces an OPTIONS preflight on every
+    // single log call — extra latency, and a whole class of CORS failures for
+    // something that must never be able to disturb the app. text/plain makes
+    // this a "simple" cross-origin request with no preflight at all. The body
+    // is still JSON; the Lambda parses it regardless of the declared type.
+    // This mirrors what the Apps Script calls already do.
+    const TYPE = 'text/plain;charset=UTF-8';
+
     // Small records go by beacon so they survive a tab close or navigation.
     // sendBeacon returns false when it would exceed the browser's 64 KB
     // in-flight budget — that return value MUST be checked, or the record is
     // dropped without a trace.
     if (small && navigator.sendBeacon) {
-      const queued = navigator.sendBeacon(url, new Blob([body], { type: 'application/json' }));
+      const queued = navigator.sendBeacon(url, new Blob([body], { type: TYPE }));
       if (queued) return;
     }
     // Large records (full clinic snapshots) exceed the 64 KB cap that applies
@@ -124,7 +133,7 @@ function logEvent(record) {
     // Trade-off: a normal fetch does not survive the tab closing mid-flight.
     fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': TYPE },
       body,
       keepalive: small,
     }).catch(() => {});
