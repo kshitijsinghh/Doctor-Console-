@@ -148,6 +148,15 @@ function medTotal(m) {
   return '(Tot: ' + (per * d) + ' ' + (m.unit || '') + ')';
 }
 function splitLabel(sp) { return sp.category === 'Custom' ? (sp.custom || 'Custom') : sp.category; }
+
+// Show the doctor what actually failed. Apps Script returns readable messages
+// ("Visit not found: P0027_1", "Service invoked too many times"), and a real
+// message is something they can report; "Something went wrong" is not.
+function errText(err, fallback) {
+  const m = String((err && err.message) || '').trim();
+  if (!m) return fallback;
+  return m.length > 160 ? m.slice(0, 160) + '…' : m;
+}
 function buildRx(cf, meta, clinicName) {
   return {
     dateLabel: meta.dateLabel, name: meta.name, ageGender: meta.ageGender, mobile: meta.mobile,
@@ -396,8 +405,8 @@ export default function PortalApp() {
       const res = await fetchList();
       applySnapshot(res);
       setLoadError('');
-    } catch {
-      setLoadError('Something went wrong, please try again');
+    } catch (err) {
+      setLoadError(errText(err, 'Something went wrong, please try again'));
     } finally {
       if (isRefresh) setRefreshing(false); else setLoading(false);
     }
@@ -761,8 +770,8 @@ export default function PortalApp() {
       setRegPickedId('');
       setRegAddingMember(false);
       setIsAddingForFamily(false);
-    } catch {
-      setRegError('Something went wrong, please try again.');
+    } catch (err) {
+      setRegError(errText(err, 'Something went wrong, please try again.'));
     } finally {
       setSavingReg(false);
     }

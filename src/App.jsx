@@ -42,6 +42,15 @@ function fmtTime(t) {
   const hr = h % 12 || 12;
   return hr + ':' + String(m).padStart(2, '0') + ' ' + ampm;
 }
+
+// Show the doctor what actually failed. Apps Script returns readable messages
+// ("Visit not found: P0027_1", "Service invoked too many times"), and a real
+// message is something they can report; "Something went wrong" is not.
+function errText(err, fallback) {
+  const m = String((err && err.message) || '').trim();
+  if (!m) return fallback;
+  return m.length > 160 ? m.slice(0, 160) + '…' : m;
+}
 function blankClinical() {
   return {
     chiefComplaint: [], chiefDescription: '', patientProblem: '', medicalHistory: '',
@@ -182,8 +191,8 @@ export default function App({ user, onLogout }) {
       const res = await fetchList();
       applySnapshot(res);
       setLoadError('');
-    } catch {
-      setLoadError('Something went wrong, please try again');
+    } catch (err) {
+      setLoadError(errText(err, 'Something went wrong, please try again'));
     } finally {
       if (isRefresh) setRefreshing(false); else setLoading(false);
     }
@@ -434,8 +443,8 @@ export default function App({ user, onLogout }) {
       const res = await saveClinical({ patientId: curPatientId, visitId: curVisitId, cform: saveForm });
       if (res.patients) applySnapshot(res);
       else applyClinicalLocally(curPatientId, curVisitId, saveForm, res);
-    } catch {
-      setClinicalError('Auto-save failed — your data is still in the form.');
+    } catch (err) {
+      setClinicalError(errText(err, 'Auto-save failed — your data is still in the form.'));
     } finally {
       setSavingClinical(false);
     }
@@ -462,8 +471,8 @@ export default function App({ user, onLogout }) {
         setSavedFlash(false);
         replaceView('dashboard');
       }, 900);
-    } catch {
-      setClinicalError('Something went wrong, please try again');
+    } catch (err) {
+      setClinicalError(errText(err, 'Something went wrong, please try again'));
     } finally {
       setSavingClinical(false);
     }
@@ -477,8 +486,8 @@ export default function App({ user, onLogout }) {
       try {
         const res = await uploadQr({ dataUrl: reader.result, filename: file.name });
         applySnapshot(res);
-      } catch {
-        setClinicalError('Something went wrong, please try again');
+      } catch (err) {
+        setClinicalError(errText(err, 'Something went wrong, please try again'));
       }
     };
     reader.readAsDataURL(file);
