@@ -256,55 +256,104 @@ export async function fetchList() {
   return json;
 }
 
+// Apps Script can lose the response to a POST that already committed. The
+// observed chain is: POST /exec -> 302 -> googleusercontent -> 302 -> BACK to
+// /exec, followed as a GET -> 200. That last hop lands in doGet with no
+// action, so the browser is handed "Unknown or missing action: undefined" for
+// a write that succeeded. Without handling, the doctor sees "Visit creation
+// failed", presses save again, and the row is written twice.
+const LOST_RESPONSE_RE = /unknown or missing action/i;
+const LOST_RESPONSE_RETRIES = 2;
+
+function newRequestId() {
+  try {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+  } catch { /* older Safari */ }
+  return 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+}
+
+// True only when the server that produced this error also supports replaying
+// a retry by requestId. Retrying against a clinic still on the older Code.gs
+// would execute the write a second time, so the flag has to come from the
+// response itself rather than being assumed.
+function serverReplaysRetries(body) {
+  if (!body) return false;
+  try { return !!JSON.parse(body)._idem; } catch { return false; }
+}
+
 async function post(payload) {
   assertConfigured();
+  // Constant across retries. The server stores the first response under this
+  // id and replays it, so a retry cannot write a second row.
+  const requestId = newRequestId();
   const opts = {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: JSON.stringify(payload),
+    body: JSON.stringify({ ...payload, requestId }),
   };
   const ctx = { action: payload.action, patientId: payload.patientId, visitId: payload.visitId };
-  const res = await fetchWithRetry(BASE_URL, opts, ctx);
-  if (!res) {
-    const e = new Error('Could not reach the clinic server. Check your connection.');
-    e.networkFailure = true;
-    throw e;
-  }
-  try {
-    const json = await handle(res);
-    if (LOG_BODIES && LOG_SUCCESS_RESPONSES) {
+
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetchWithRetry(BASE_URL, opts, ctx);
+    if (!res) {
+      const e = new Error('Could not reach the clinic server. Check your connection.');
+      e.networkFailure = true;
+      throw e;
+    }
+    try {
+      const json = await handle(res);
+      if (LOG_BODIES && LOG_SUCCESS_RESPONSES) {
+        logEvent({
+          kind: 'apps_script_response',
+          action: payload.action, method: 'POST',
+          patientId: payload.patientId || '', visitId: payload.visitId || '',
+          httpStatus: res.status,
+          finalOutcome: 'ok',
+          requestId,
+          lostResponseRetries: attempt,
+          requestBody: clip(opts.body, BODY_MAX),
+          responseBody: clip(json.__raw, BODY_MAX),
+          responseBytes: (json.__raw || '').length,
+          // Apps Script's own phase timings, returned inside the response so
+          // measuring them costs no extra request and no UrlFetch quota.
+          serverPerf: json._perf || null,
+        });
+      }
+      return json;
+    } catch (err) {
+      const lost = !!err.serverError
+        && LOST_RESPONSE_RE.test(err.serverError)
+        && serverReplaysRetries(err.responseBody);
+      const willRetry = lost && attempt < LOST_RESPONSE_RETRIES;
+
+      // handle() failures (non-2xx, non-JSON, {ok:false}) are not seen by
+      // fetchWithRetry when the HTTP layer itself returned 200.
       logEvent({
-        kind: 'apps_script_response',
+        kind: 'apps_script_error',
         action: payload.action, method: 'POST',
         patientId: payload.patientId || '', visitId: payload.visitId || '',
-        httpStatus: res.status,
-        finalOutcome: 'ok',
-        requestBody: clip(opts.body, BODY_MAX),
-        responseBody: clip(json.__raw, BODY_MAX),
-        responseBytes: (json.__raw || '').length,
-        // Apps Script's own phase timings, returned inside the response so
-        // measuring them costs no extra request and no UrlFetch quota.
-        serverPerf: json._perf || null,
+        httpStatus: err.httpStatus || null,
+        serverError: err.serverError || '',
+        nonJson: !!err.nonJson,
+        message: String(err.message || ''),
+        requestId,
+        // The response came back for a request we never made: Apps Script
+        // bounced ours through doGet. The write itself has committed.
+        lostResponse: lost,
+        lostResponseAttempt: attempt,
+        willRetry,
+        requestBody: LOG_BODIES ? clip(opts.body, BODY_MAX) : undefined,
+        // Full response text only on failure — a successful saveIntake returns
+        // the entire clinic snapshot (~178 KB), which is noise, not signal.
+        responseBody: LOG_BODIES ? clip(err.responseBody, BODY_MAX) : undefined,
       });
+
+      if (willRetry) {
+        await new Promise((r) => setTimeout(r, 700 * (attempt + 1)));
+        continue;
+      }
+      throw err;
     }
-    return json;
-  } catch (err) {
-    // handle() failures (non-2xx, non-JSON, {ok:false}) are not seen by
-    // fetchWithRetry when the HTTP layer itself returned 200.
-    logEvent({
-      kind: 'apps_script_error',
-      action: payload.action, method: 'POST',
-      patientId: payload.patientId || '', visitId: payload.visitId || '',
-      httpStatus: err.httpStatus || null,
-      serverError: err.serverError || '',
-      nonJson: !!err.nonJson,
-      message: String(err.message || ''),
-      requestBody: LOG_BODIES ? clip(opts.body, BODY_MAX) : undefined,
-      // Full response text only on failure — a successful saveIntake returns
-      // the entire clinic snapshot (~178 KB), which is noise, not signal.
-      responseBody: LOG_BODIES ? clip(err.responseBody, BODY_MAX) : undefined,
-    });
-    throw err;
   }
 }
 
