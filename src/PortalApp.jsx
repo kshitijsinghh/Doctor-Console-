@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { fetchList, portalCheckin, savePatientProblem, getDocumentUrl, fetchOrg, generatePrescriptionPdf, generateReceiptPdf } from './api';
+import { fetchList, fetchPatientSnapshot, portalCheckin, savePatientProblem, getDocumentUrl, fetchOrg, generatePrescriptionPdf, generateReceiptPdf } from './api';
+import { signInWithFirebaseToken, clearSession as clearPortalSession } from './auth';
 import { getFirebaseAuth, RecaptchaVerifier, signInWithPhoneNumber, signOut as firebaseSignOut } from './firebase';
 
 /* ─── helpers ─── */
@@ -402,7 +403,7 @@ export default function PortalApp() {
   const loadList = useCallback(async (isRefresh) => {
     if (isRefresh) setRefreshing(true); else setLoading(true);
     try {
-      const res = await fetchList();
+      const res = await loadPortalData();
       applySnapshot(res);
       setLoadError('');
     } catch (err) {
@@ -647,7 +648,17 @@ export default function PortalApp() {
     setVerifyingOtp(true);
     try {
       if (!confirmationRef.current) { setAuthError('Session expired. Please send OTP again.'); setVerifyingOtp(false); return; }
-      await confirmationRef.current.confirm(code);
+      const cred = await confirmationRef.current.confirm(code);
+      // Firebase has now proven the phone number. Exchange that proof for a
+      // PatientPad token scoped to it, so the clinic server returns this
+      // patient's records and nothing else.
+      try {
+        const idToken = await cred.user.getIdToken();
+        await signInWithFirebaseToken(idToken);
+      } catch {
+        // A clinic still running with authMode off needs no token; the read
+        // below falls back and behaves exactly as before.
+      }
       onOtpVerified(m);
     } catch (err) {
       const errCode = err?.code || '';
@@ -656,6 +667,17 @@ export default function PortalApp() {
       else setAuthError('Verification failed. Please try again.');
     } finally {
       setVerifyingOtp(false);
+    }
+  }
+
+  // Scoped read first. If the clinic has not enabled authentication yet there
+  // is no token to scope by, and the server says so — only then fall back.
+  async function loadPortalData() {
+    try {
+      return await fetchPatientSnapshot();
+    } catch (err) {
+      if (err && /requires a token|Not authorised/i.test(String(err.message || ''))) return await fetchList();
+      throw err;
     }
   }
 
@@ -691,6 +713,7 @@ export default function PortalApp() {
 
   function signOut() {
     try { firebaseSignOut(getFirebaseAuth()); } catch {}
+    try { clearPortalSession(); } catch {}
     try { localStorage.removeItem(SESSION_KEY); } catch { /* */ }
     clearRecaptcha();
     confirmationRef.current = null;
@@ -882,7 +905,7 @@ export default function PortalApp() {
   async function refreshQueue() {
     setRefreshing(true);
     try {
-      const res = await fetchList();
+      const res = await loadPortalData();
       applySnapshot(res);
     } catch { /* ignore */ }
     setRefreshing(false);

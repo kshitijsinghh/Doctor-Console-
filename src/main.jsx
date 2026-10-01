@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.jsx'
 import Login from './components/Login.jsx'
-import { getStoredUser, clearUser } from './auth'
+import { getStoredUser, signOut } from './auth'
 
 document.addEventListener('wheel', (e) => {
   if (e.target.tagName === 'INPUT' && e.target.type === 'number' && document.activeElement === e.target) {
@@ -16,7 +16,9 @@ function Root() {
 
   if (!user) return <Login onAuth={setUser} />;
 
-  return <App user={user} onLogout={() => { clearUser(); setUser(null); }} />;
+  // Revokes the session server-side as well as locally, so the refresh token
+  // cannot be used again by anyone who copied it.
+  return <App user={user} onLogout={() => { signOut(); setUser(null); }} />;
 }
 
 createRoot(document.getElementById('root')).render(
