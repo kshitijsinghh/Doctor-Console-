@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { fetchList, fetchPatientSnapshot, portalCheckin, savePatientProblem, getDocumentUrl, fetchOrg, generatePrescriptionPdf, generateReceiptPdf } from './api';
-import { signInWithFirebaseToken, signInWithGooglePatientToken, hasLiveToken, clearSession as clearPortalSession } from './auth';
+import { signInWithFirebaseToken, signInWithGooglePatientToken, requestPortalOtp, signInWithPortalOtp, hasLiveToken, clearSession as clearPortalSession } from './auth';
 import { getFirebaseAuth, RecaptchaVerifier, signInWithPhoneNumber, signOut as firebaseSignOut } from './firebase';
 
 /* ─── helpers ─── */
@@ -348,6 +348,10 @@ export default function PortalApp() {
   const [otpStep, setOtpStep] = useState(false);
   const [otpDigits, setOtpDigits] = useState(['', '', '', '', '', '']);
   const [sendingOtp, setSendingOtp] = useState(false);
+  // WhatsApp is the default: it costs the clinic less than an SMS and the
+  // patient almost certainly has it open already. SMS stays as the fallback
+  // for a number with no WhatsApp account.
+  const [otpChannel, setOtpChannel] = useState('whatsapp');
   const [verifyingOtp, setVerifyingOtp] = useState(false);
   const [resendTimer, setResendTimer] = useState(0);
   const otpRefs = useRef([]);
@@ -586,6 +590,24 @@ export default function PortalApp() {
     if (!m || m.length !== 10) { setAuthError('Please enter a valid 10-digit mobile number.'); return; }
     setAuthError('');
     setSendingOtp(true);
+
+    if (otpChannel === 'whatsapp') {
+      try {
+        await requestPortalOtp(m);
+        setOtpStep(true);
+        setOtpDigits(['', '', '', '', '', '']);
+        startResendTimer();
+      } catch (err) {
+        // The server's message is already patient-facing — it says whether
+        // this is a rate limit or a delivery failure, and never whether the
+        // number belongs to a patient here.
+        setAuthError(errText(err, 'Could not send the code on WhatsApp. Try SMS instead.'));
+      } finally {
+        setSendingOtp(false);
+      }
+      return;
+    }
+
     try {
       clearRecaptcha();
       const verifier = setupRecaptcha();
@@ -609,6 +631,20 @@ export default function PortalApp() {
     if (resendTimer > 0) return;
     setAuthError('');
     setSendingOtp(true);
+
+    if (otpChannel === 'whatsapp') {
+      try {
+        await requestPortalOtp(normMobile(loginMobile));
+        setOtpDigits(['', '', '', '', '', '']);
+        startResendTimer();
+      } catch (err) {
+        setAuthError(errText(err, 'Could not resend the code. Please try again.'));
+      } finally {
+        setSendingOtp(false);
+      }
+      return;
+    }
+
     try {
       clearRecaptcha();
       const verifier = setupRecaptcha();
@@ -660,6 +696,21 @@ export default function PortalApp() {
     const m = normMobile(loginMobile);
     setAuthError('');
     setVerifyingOtp(true);
+
+    if (otpChannel === 'whatsapp') {
+      try {
+        // The clinic server checks the code and returns the patient token in
+        // one step — there is no Firebase credential in this path.
+        await signInWithPortalOtp(m, code);
+        await onOtpVerified(m);
+      } catch (err) {
+        setAuthError(errText(err, 'That code is not right, or it has expired.'));
+      } finally {
+        setVerifyingOtp(false);
+      }
+      return;
+    }
+
     try {
       if (!confirmationRef.current) { setAuthError('Session expired. Please send OTP again.'); setVerifyingOtp(false); return; }
       const cred = await confirmationRef.current.confirm(code);
@@ -1251,7 +1302,7 @@ export default function PortalApp() {
                 </h1>
                 <p style={{ color: '#5c7a76', fontSize: 15, marginTop: 8, textWrap: 'pretty' }}>
                   {otpStep
-                    ? <>We sent a 6-digit code to <strong>+91 {loginMobile}</strong></>
+                    ? <>We sent a 6-digit code {otpChannel === 'whatsapp' ? 'on WhatsApp' : 'by SMS'} to <strong>+91 {loginMobile}</strong></>
                     : 'Sign in to check in for your visit, get your queue number and see your treatment details.'}
                 </p>
 
@@ -1263,6 +1314,23 @@ export default function PortalApp() {
                 ) : !otpStep ? (
                   <div style={{ marginTop: 20 }}>
                     <div style={{ textAlign: 'left' }}>
+                      <label style={{ display: 'block', fontWeight: 700, fontSize: '13.5px', marginBottom: 7, color: '#0e3b39' }}>Where should we send your code?</label>
+                      <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+                        {[['whatsapp', 'WhatsApp'], ['sms', 'SMS']].map(([val, label]) => (
+                          <button
+                            key={val}
+                            type="button"
+                            onClick={() => { setOtpChannel(val); setAuthError(''); }}
+                            style={{
+                              flex: 1, padding: '11px 10px', borderRadius: 11, cursor: 'pointer',
+                              fontWeight: 700, fontSize: '14px',
+                              border: otpChannel === val ? '1.5px solid #0e756c' : '1px solid #d6e7e3',
+                              background: otpChannel === val ? '#e6f4f2' : '#f7fbfa',
+                              color: otpChannel === val ? '#0e756c' : '#5c7a76',
+                            }}
+                          >{label}</button>
+                        ))}
+                      </div>
                       <label style={{ display: 'block', fontWeight: 700, fontSize: '13.5px', marginBottom: 7, color: '#0e3b39' }}>Mobile number</label>
                       <input
                         value={loginMobile}
@@ -1276,7 +1344,7 @@ export default function PortalApp() {
                         background: sendingOtp ? '#8aa8a3' : '#ef5a3c', color: '#fff',
                         fontWeight: 700, fontSize: 16, cursor: sendingOtp ? 'default' : 'pointer',
                       }}>
-                        {sendingOtp ? 'Sending OTP...' : 'Send OTP'}
+                        {sendingOtp ? 'Sending code...' : (otpChannel === 'whatsapp' ? 'Send code on WhatsApp' : 'Send code by SMS')}
                       </button>
                     </div>
 

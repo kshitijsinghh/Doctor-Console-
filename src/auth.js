@@ -126,6 +126,25 @@ export function hasLiveToken() {
   return (s.expiresAt || 0) * 1000 - Date.now() > 30 * 1000;
 }
 
+// ── Patient portal: OTP over WhatsApp ───────────────────────────────────
+//
+// Unlike the Firebase path, the clinic server issues the code and the token
+// itself. Both endpoints are deliberately unauthenticated — they are how a
+// patient GETS a token — and carry their own rate limiting instead.
+
+export async function requestPortalOtp(phone) {
+  return authPost('/portal/otp/request', { phone });
+}
+
+export async function signInWithPortalOtp(phone, code) {
+  const r = await authPost('/portal/otp/verify', { phone, code });
+  write({
+    user: { role: 'patient' }, role: r.role,
+    accessToken: r.token, expiresAt: r.expiresAt,
+  });
+  return r;
+}
+
 let refreshInFlight = null;
 
 async function refreshSession() {
