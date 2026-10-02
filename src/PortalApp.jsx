@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { fetchList, fetchPatientSnapshot, portalCheckin, savePatientProblem, getDocumentUrl, fetchOrg, generatePrescriptionPdf, generateReceiptPdf } from './api';
-import { signInWithFirebaseToken, clearSession as clearPortalSession } from './auth';
+import { signInWithFirebaseToken, signInWithGooglePatientToken, hasLiveToken, clearSession as clearPortalSession } from './auth';
 import { getFirebaseAuth, RecaptchaVerifier, signInWithPhoneNumber, signOut as firebaseSignOut } from './firebase';
 
 /* ─── helpers ─── */
@@ -406,22 +406,32 @@ export default function PortalApp() {
       const res = await loadPortalData();
       applySnapshot(res);
       setLoadError('');
+      return res;
     } catch (err) {
       setLoadError(errText(err, 'Something went wrong, please try again'));
+      return null;
     } finally {
       if (isRefresh) setRefreshing(false); else setLoading(false);
     }
   }, []);
 
   /* ─── init: restore session, load data ─── */
+  // Data is fetched ONLY once a token exists. Fetching first is what broke
+  // the portal when the clinic switched authentication on: the scoped read
+  // was refused, the unscoped fallback was refused too, and the error screen
+  // rendered before the patient ever reached the login form.
   useEffect(() => {
-    loadList(false);
     fetchOrg().then(o => { if (o) setOrg(o); });
+    if (!hasLiveToken()) { setLoading(false); return; }
+    (async () => {
+      const snap = await loadList(false);
+      if (snap) restoreFromSession(snap);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadList]);
 
-  /* Once db is loaded, restore session */
-  useEffect(() => {
-    if (!db) return;
+  /* Route a returning patient whose token is still alive. */
+  function restoreFromSession(data) {
     try {
       const raw = localStorage.getItem(SESSION_KEY);
       if (!raw) return;
@@ -430,9 +440,9 @@ export default function PortalApp() {
 
       if (s.mobile) {
         setAuthedMobile(s.mobile);
-        const matches = findAllByMobile(db, s.mobile);
+        const matches = findAllByMobile(data, s.mobile);
         if (matches.length > 0) {
-          restorePatient(matches[0].patientId);
+          restorePatient(matches[0].patientId, data);
         } else {
           setView('register');
           setReg(r => ({ ...r, mobile: s.mobile }));
@@ -442,21 +452,20 @@ export default function PortalApp() {
 
       if (s.email) {
         setAuthedEmail(s.email);
-        const found = db.order.find(id => (db.patients[id].email || '').toLowerCase() === s.email.toLowerCase());
+        const found = data.order.find(id => (data.patients[id].email || '').toLowerCase() === s.email.toLowerCase());
         if (found) {
-          restorePatient(found);
+          restorePatient(found, data);
         } else {
           setView('register');
         }
       }
     } catch { /* ignore */ }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [db !== null]);
+  }
 
-  function restorePatient(pid) {
+  function restorePatient(pid, data) {
     setMyPatientId(pid);
     setView('home');
-    const p = db.patients[pid];
+    const p = (data || db).patients[pid];
     if (p) {
       const t = localToday();
       const openV = p.visits.filter(v => !v.done && v.date === t).sort((a, b) => (b.no || 0) - (a.no || 0))[0];
@@ -487,10 +496,11 @@ export default function PortalApp() {
     window.location.href = authUrl;
   }
 
-  function onGoogleAuthComplete(userEmail) {
+  async function onGoogleAuthComplete(userEmail) {
     try { localStorage.setItem(SESSION_KEY, JSON.stringify({ email: userEmail })); } catch { /* */ }
     setAuthedEmail(userEmail);
     setAuthChecking(false);
+    const db = await loadList(false);
     if (!db) { setView('register'); return; }
     const found = db.order.find(id => (db.patients[id].email || '').toLowerCase() === userEmail.toLowerCase());
     if (found) {
@@ -530,14 +540,18 @@ export default function PortalApp() {
       headers: { Authorization: 'Bearer ' + accessToken },
     })
       .then(r => r.json())
-      .then(info => {
+      .then(async info => {
         const userEmail = (info.email || '').toLowerCase();
         if (!userEmail) {
           setAuthError('Could not get your email from Google.');
           setAuthChecking(false);
           return;
         }
-        onGoogleAuthComplete(userEmail);
+        // Exchange Google's proof for a PatientPad token scoped to this
+        // email, so the clinic server returns this patient's records only.
+        try { await signInWithGooglePatientToken(accessToken); }
+        catch { /* a clinic still running with authMode off needs no token */ }
+        await onGoogleAuthComplete(userEmail);
       })
       .catch(() => { setAuthError('Something went wrong, please try again.'); setAuthChecking(false); });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -659,7 +673,7 @@ export default function PortalApp() {
         // A clinic still running with authMode off needs no token; the read
         // below falls back and behaves exactly as before.
       }
-      onOtpVerified(m);
+      await onOtpVerified(m);
     } catch (err) {
       const errCode = err?.code || '';
       if (errCode === 'auth/invalid-verification-code') setAuthError('Invalid OTP. Please check and try again.');
@@ -670,20 +684,26 @@ export default function PortalApp() {
     }
   }
 
-  // Scoped read first. If the clinic has not enabled authentication yet there
-  // is no token to scope by, and the server says so — only then fall back.
+  // Scoped read. The unscoped fallback exists only for a clinic that has not
+  // been migrated to authentication yet — there the Lambda issues no token at
+  // all and the server has nothing to scope by. Once we DO hold a token, a
+  // refusal is a real error and must surface rather than quietly pulling the
+  // whole clinic down to the browser.
   async function loadPortalData() {
     try {
       return await fetchPatientSnapshot();
     } catch (err) {
-      if (err && /requires a token|Not authorised/i.test(String(err.message || ''))) return await fetchList();
+      const refused = err && /requires a token|Not authorised/i.test(String(err.message || ''));
+      if (refused && !hasLiveToken()) return await fetchList();
       throw err;
     }
   }
 
-  function onOtpVerified(mobile) {
+  async function onOtpVerified(mobile) {
     try { localStorage.setItem(SESSION_KEY, JSON.stringify({ mobile })); } catch { /* */ }
     setAuthedMobile(mobile);
+    // The scoped snapshot can only be fetched now that a token exists.
+    const db = await loadList(false);
     if (!db) { setView('register'); setReg(r => ({ ...r, mobile })); return; }
     const matches = findAllByMobile(db, mobile);
     if (matches.length > 0) {

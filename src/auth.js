@@ -103,6 +103,29 @@ export async function signInWithFirebaseToken(firebaseIdToken) {
   return r;
 }
 
+// The portal's other door: a patient who signs in with Google rather than a
+// phone OTP. The resulting token is scoped by the Google-verified EMAIL
+// instead of a phone number, and the clinic server matches it against the
+// email on the patient record.
+export async function signInWithGooglePatientToken(googleAccessToken) {
+  const r = await authPost('/auth/token', { kind: 'patient_google', googleAccessToken });
+  write({
+    user: { role: 'patient' }, role: r.role,
+    accessToken: r.token, expiresAt: r.expiresAt,
+  });
+  return r;
+}
+
+// True when a usable patient/staff token is still in hand. The portal uses it
+// to decide whether a page reload can go straight to the records or has to
+// show the login screen again — patient tokens carry no refresh token, so an
+// expired one cannot be renewed without signing in.
+export function hasLiveToken() {
+  const s = read();
+  if (!s || !s.accessToken) return false;
+  return (s.expiresAt || 0) * 1000 - Date.now() > 30 * 1000;
+}
+
 let refreshInFlight = null;
 
 async function refreshSession() {

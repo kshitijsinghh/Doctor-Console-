@@ -410,6 +410,10 @@ async function post(payload) {
         patientId: payload.patientId || '', visitId: payload.visitId || '',
         httpStatus: err.httpStatus || null,
         serverError: err.serverError || '',
+        // The specific reason a token was refused (missing / expired /
+        // bad_signature / wrong_clinic / patient_role_forbidden:<action>).
+        // Without this every refusal logs as the same "Not authorised."
+        authError: err.authError || '',
         nonJson: !!err.nonJson,
         message: String(err.message || ''),
         requestId,
