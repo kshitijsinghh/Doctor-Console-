@@ -4,6 +4,7 @@
 import { renderToString } from 'react-dom/server';
 import { PrescriptionSheet, ReceiptSheet, previewSrc } from '../src/views/Clinical.jsx';
 import { WaProvider } from '../src/whatsapp/WaContext.jsx';
+import { fmtClock, fmtDay, fmtDayOf } from '../src/whatsapp/ui.jsx';
 import { docVersionForAttempt } from '../src/whatsapp/DocSend.jsx';
 import { idempotencyKeyFor } from '../src/whatsapp/waApi.js';
 import { createElement as h } from 'react';
@@ -90,6 +91,32 @@ check('an unknown format is left alone rather than guessed at',
   previewSrc(signed, undefined) === signed, previewSrc(signed, undefined));
 check('a missing url stays missing instead of becoming "#toolbar=0"',
   previewSrc(null, 'pdf') === null, previewSrc(null, 'pdf'));
+
+
+/* ── Which day a message was sent ────────────────────────────────────────
+   Run under TZ=Asia/Kolkata. The log printed the UTC date beside the local
+   time, so anything sent between midnight and 5:30am IST was dated to the
+   previous day while the clock beside it read the right hour. */
+
+// 2026-10-04 03:23 IST.
+const lateNight = '2026-10-03T21:53:00.000Z';
+const midday = '2026-10-04T07:30:00.000Z';
+
+check('a small-hours message is dated by the clinic\'s day, not UTC',
+  fmtDayOf(lateNight) === '4 Oct', fmtDayOf(lateNight));
+check('the old slice is what produced the wrong day',
+  fmtDay(lateNight.slice(0, 10)) === '3 Oct', fmtDay(lateNight.slice(0, 10)));
+check('the date agrees with the clock shown next to it',
+  fmtClock(lateNight) === '3:23 am', fmtClock(lateNight));
+check('a daytime message is unaffected',
+  fmtDayOf(midday) === '4 Oct', fmtDayOf(midday));
+check('a date bucket (plain YYYY-MM-DD) still formats as that day',
+  fmtDay('2026-10-04') === '4 Oct', fmtDay('2026-10-04'));
+check('no timestamp renders as empty, not "Invalid Date"',
+  fmtDayOf(null) === '' && fmtDayOf(undefined) === '' && fmtDayOf('') === '',
+  [fmtDayOf(null), fmtDayOf(undefined), fmtDayOf('')]);
+check('an unparseable timestamp renders as empty',
+  fmtDayOf('not a date') === '', fmtDayOf('not a date'));
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

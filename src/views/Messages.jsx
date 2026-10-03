@@ -8,7 +8,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import MessageDrawer from '../whatsapp/messages/MessageDrawer';
 import { MSG_FILTERS, TRIGGERS, failureReason, msgLook, msgStatus, triggerLook } from '../whatsapp/statusModel';
-import { Toast, addDays, fmtClock, fmtDay, fmtPhone, parseYmd, todayYmd, ymd } from '../whatsapp/ui';
+import { addDays, fmtClock, fmtDay, fmtDayOf, fmtPhone, parseYmd, Toast, todayYmd, ymd } from '../whatsapp/ui';
 import { listMessages, messageStats, sendMessage } from '../whatsapp/waApi';
 
 const PAGE_SIZE = 12;
@@ -371,7 +371,7 @@ export default function Messages() {
                           style={{ borderTop: '1px solid #eef4f3', cursor: 'pointer', background: st === 'failed' ? '#fffaf2' : '#fff' }}
                         >
                           <td style={{ padding: '12px 10px 12px 20px', whiteSpace: 'nowrap', color: '#33534f' }}>
-                            {fmtDay(String(m.sentAt || '').slice(0, 10))}
+                            {fmtDayOf(m.sentAt)}
                             <span style={{ display: 'block', fontSize: 12, color: '#98b0ab' }}>{fmtClock(m.sentAt)}</span>
                           </td>
                           <td style={{ padding: '12px 10px' }}>

@@ -3,7 +3,7 @@
 
 import { useEffect, useState } from 'react';
 import { failureReason, msgLook, msgStatus, triggerLook } from './statusModel';
-import { WaGlyph, fmtClock, fmtDay } from './ui';
+import { fmtClock, fmtDayOf, WaGlyph } from './ui';
 import { patientMessages } from './waApi';
 import { useWa } from './WaContext';
 
@@ -83,7 +83,7 @@ export default function PatientWhatsAppCard({ patientId, patientName, mobile }) 
                 <span style={{ flex: '1 1 150px', minWidth: 0 }}>
                   <span style={{ display: 'block', fontSize: 13.5, fontWeight: 600, color: '#0e3b39' }}>{trig.event}</span>
                   <span style={{ display: 'block', fontSize: 12, color: '#98b0ab' }}>
-                    {fmtDay(String(m.sentAt || '').slice(0, 10))} · {fmtClock(m.sentAt)}
+                    {fmtDayOf(m.sentAt)} · {fmtClock(m.sentAt)}
                     {st === 'failed' ? ' · ' + failureReason(m.failureCode, m.failureReason) : ''}
                     {m.reply ? ' · Replied ' + m.reply : ''}
                   </span>

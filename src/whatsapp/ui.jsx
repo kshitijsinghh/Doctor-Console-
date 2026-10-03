@@ -72,6 +72,21 @@ export function fmtDay(s, opts) {
   catch { return s; }
 }
 
+// The day an instant falls on, in the clinic's own timezone.
+//
+// For a timestamp, use this rather than fmtDay(iso.slice(0, 10)). Those first
+// ten characters are the UTC date, so between midnight and 5:30am IST they
+// name the previous day — while fmtClock beside them shows the local time,
+// and a receipt sent at 3:23am on the 4th reads "3 Oct 3:23 am".
+export function fmtDayOf(iso, opts) {
+  if (!iso) return '';
+  try {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    return d.toLocaleDateString('en-IN', opts || { day: 'numeric', month: 'short' });
+  } catch { return ''; }
+}
+
 // Minutes since midnight → "11:30 AM".
 export function fmtMin(m) {
   const h = Math.floor(m / 60);

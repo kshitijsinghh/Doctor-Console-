@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "oxlint",
-    "test:render": "esbuild test/render-smoke.jsx --bundle --format=esm --platform=node --outfile=.render-smoke.mjs --loader:.js=jsx --loader:.jsx=jsx --jsx=automatic --alias:firebase/app=./test/stub-firebase.js --alias:firebase/auth=./test/stub-firebase.js --external:react --external:react-dom --external:react-dom/server --external:react/jsx-runtime '--define:import.meta.env={\"VITE_AWS_API_URL\":\"https://api.test\",\"VITE_CLINIC_ID\":\"clinic_test\",\"VITE_SHEETS_API_URL\":\"https://sheets.test\",\"VITE_ALLOWED_EMAILS\":\"\"}' && node .render-smoke.mjs; rc=$?; rm -f .render-smoke.mjs; exit $rc",
+    "test:render": "esbuild test/render-smoke.jsx --bundle --format=esm --platform=node --outfile=.render-smoke.mjs --loader:.js=jsx --loader:.jsx=jsx --jsx=automatic --alias:firebase/app=./test/stub-firebase.js --alias:firebase/auth=./test/stub-firebase.js --external:react --external:react-dom --external:react-dom/server --external:react/jsx-runtime '--define:import.meta.env={\"VITE_AWS_API_URL\":\"https://api.test\",\"VITE_CLINIC_ID\":\"clinic_test\",\"VITE_SHEETS_API_URL\":\"https://sheets.test\",\"VITE_ALLOWED_EMAILS\":\"\"}' && TZ=Asia/Kolkata node .render-smoke.mjs; rc=$?; rm -f .render-smoke.mjs; exit $rc",
     "preview": "vite preview"
   },
   "dependencies": {

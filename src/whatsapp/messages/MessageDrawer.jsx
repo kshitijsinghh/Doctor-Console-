@@ -5,7 +5,7 @@
 // reception asks when a patient says they never got anything.
 
 import { failureReason, msgLook, msgStatus, triggerLook } from '../statusModel';
-import { WaGlyph, Spinner, fmtClock, fmtDay, fmtPhone } from '../ui';
+import { fmtClock, fmtDayOf, fmtPhone, Spinner, WaGlyph } from '../ui';
 
 // The ladder is monotonic but lossy: Meta can report `read` without ever
 // sending `delivered`. A step is therefore drawn as reached when anything
@@ -43,7 +43,7 @@ function Timeline({ msg }) {
               </span>
               {reached && s.at && (
                 <span style={{ display: 'block', fontSize: 12, color: '#7a9994' }}>
-                  {fmtDay(String(s.at).slice(0, 10))} · {fmtClock(s.at)}
+                  {fmtDayOf(s.at)} · {fmtClock(s.at)}
                 </span>
               )}
             </div>
