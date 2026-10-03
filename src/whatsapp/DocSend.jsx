@@ -17,6 +17,14 @@ import { useWa } from './WaContext';
 const POLL_MS = 3000;
 const STILL_TRYING_MS = 8000;
 
+// The first send keeps the plain document version, so the deterministic key
+// still collapses a double click. Every later one is tagged, which is what
+// makes "Send again" actually send again.
+export function docVersionForAttempt(docVersion, attempt) {
+  if (!attempt) return docVersion;
+  return (docVersion == null || docVersion === '' ? '1' : String(docVersion)) + '#' + attempt;
+}
+
 export function useDocSend({ useCase, patient, visitId, docVersion, params, documentUrl, existing }) {
   const wa = useWa();
   const optedOut = wa.enabled && wa.isOptedOut(patient && patient.mobile);
@@ -33,6 +41,14 @@ export function useDocSend({ useCase, patient, visitId, docVersion, params, docu
   const [stillTrying, setStillTrying] = useState(false);
   const pollRef = useRef(null);
   const slowRef = useRef(null);
+
+  // Which attempt this is. The idempotency key is deliberately deterministic
+  // so a double click, a second tab and a retried request all collapse into
+  // one send — but "Send again" is a person deciding they want another
+  // message, and with an unchanged key the backend recognises the first one
+  // and hands it straight back, so nothing goes. Starts at 1 when the pop-up
+  // already knows about a send, because the next click is then a resend too.
+  const attemptRef = useRef(existing ? 1 : 0);
 
   const stopPolling = useCallback(() => {
     clearInterval(pollRef.current);
@@ -65,6 +81,10 @@ export function useDocSend({ useCase, patient, visitId, docVersion, params, docu
 
   const send = useCallback(async () => {
     if (state === 'sending') return;
+    // Read before the await so two clicks landing together still take
+    // different numbers; the guard above already covers the in-flight case.
+    const attempt = attemptRef.current;
+    attemptRef.current += 1;
     setState('sending');
     setError('');
     setStillTrying(false);
@@ -77,7 +97,7 @@ export function useDocSend({ useCase, patient, visitId, docVersion, params, docu
         name: patient && patient.name,
         params: params || {},
         documentUrl,
-        docVersion,
+        docVersion: docVersionForAttempt(docVersion, attempt),
       });
       const m = res.message || res;
       setMsg(m);

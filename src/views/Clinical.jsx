@@ -97,6 +97,17 @@ async function printAsPdf(url) {
   }
 }
 
+// The document used to come back as HTML and the iframe showed the page
+// itself. Now that the backend produces a real PDF, the browser wraps it in
+// its own viewer — a grey toolbar, a zoom box and a thumbnail rail over what
+// should just look like the receipt. These fragment parameters turn that
+// furniture off and fit the page to the width of the pop-up. They are a
+// fragment, so they never reach S3 and cannot disturb the signed URL.
+function previewSrc(url, format) {
+  if (!url) return url;
+  return format === 'pdf' ? url + '#toolbar=0&navpanes=0&scrollbar=0&view=FitH' : url;
+}
+
 // Capitalise the first letter of each word, leaving the rest of the word as typed
 // ("zerodol p" -> "Zerodol P", "500mg" stays "500mg", "ZERODOL" stays "ZERODOL").
 function titleCase(s) {
@@ -679,7 +690,7 @@ function PrescriptionSheet({ rx, onClose, clinicName, clinicAddress, doctorName,
               </div>
             )}
             {docxUrl && (docxFormat === 'pdf' || docxFormat === 'html') && (
-              <iframe id="rx-iframe" src={docxUrl} style={{ width: '100%', height: 700, border: 'none' }} title="Prescription" />
+              <iframe id="rx-iframe" src={previewSrc(docxUrl, docxFormat)} style={{ width: '100%', height: 700, border: 'none' }} title="Prescription" />
             )}
             {docxUrl && docxFormat === 'docx' && (
               <div style={{ padding: 40, textAlign: 'center' }}>
@@ -903,7 +914,7 @@ function ReceiptSheet({ receipt, onClose, clinicName, clinicAddress, doctorName,
               </div>
             )}
             {docxUrl && (docxFormat === 'pdf' || docxFormat === 'html') && (
-              <iframe src={docxUrl} style={{ width: '100%', height: 700, border: 'none' }} title="Receipt" />
+              <iframe src={previewSrc(docxUrl, docxFormat)} style={{ width: '100%', height: 700, border: 'none' }} title="Receipt" />
             )}
             {docxUrl && docxFormat === 'docx' && (
               <div style={{ padding: 40, textAlign: 'center' }}>

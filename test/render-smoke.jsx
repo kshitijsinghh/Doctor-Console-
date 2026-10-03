@@ -4,6 +4,8 @@
 import { renderToString } from 'react-dom/server';
 import { PrescriptionSheet, ReceiptSheet } from '../src/views/Clinical.jsx';
 import { WaProvider } from '../src/whatsapp/WaContext.jsx';
+import { docVersionForAttempt } from '../src/whatsapp/DocSend.jsx';
+import { idempotencyKeyFor } from '../src/whatsapp/waApi.js';
 import { createElement as h } from 'react';
 
 const rx = {
@@ -40,5 +42,35 @@ for (const waEnabled of [false, true]) {
     }
   }
 }
+/* ── Idempotency key across resends ──────────────────────────────────────
+   The key is deterministic on purpose so a double click collapses into one
+   send. That same property made "Send again" a no-op: the backend saw a key
+   it already had and returned the first message instead of sending. */
+
+const check = (name, ok, got) => {
+  if (ok) { pass++; console.log(`  ✓ ${name}`); }
+  else { fail++; console.log(`  ✗ ${name}\n      got ${JSON.stringify(got)}`); }
+};
+
+const key = (dv, attempt) => idempotencyKeyFor('P0001_68', 'PAYMENT_RECEIPT', docVersionForAttempt(dv, attempt));
+
+check('first send keeps the plain document version',
+  key('04 Oct 2026', 0) === idempotencyKeyFor('P0001_68', 'PAYMENT_RECEIPT', '04 Oct 2026'), key('04 Oct 2026', 0));
+check('a resend produces a different key',
+  key('04 Oct 2026', 1) !== key('04 Oct 2026', 0), [key('04 Oct 2026', 0), key('04 Oct 2026', 1)]);
+check('each further resend is distinct again',
+  new Set([0, 1, 2, 3].map((a) => key('04 Oct 2026', a))).size === 4,
+  [0, 1, 2, 3].map((a) => key('04 Oct 2026', a)));
+check('a missing document version still yields a usable key',
+  key(undefined, 1) !== key(undefined, 0) && /#1$/.test(key(undefined, 1)), key(undefined, 1));
+check('an empty document version is not collapsed into the attempt marker',
+  key('', 1) !== key('', 0), [key('', 0), key('', 1)]);
+check('the two use cases never collide on the same attempt',
+  idempotencyKeyFor('P0001_68', 'EPRESCRIPTION', docVersionForAttempt('04 Oct 2026', 1))
+    !== idempotencyKeyFor('P0001_68', 'PAYMENT_RECEIPT', docVersionForAttempt('04 Oct 2026', 1)));
+check('different visits never collide on the same attempt',
+  idempotencyKeyFor('P0001_68', 'PAYMENT_RECEIPT', docVersionForAttempt('04 Oct 2026', 1))
+    !== idempotencyKeyFor('P0001_69', 'PAYMENT_RECEIPT', docVersionForAttempt('04 Oct 2026', 1)));
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
