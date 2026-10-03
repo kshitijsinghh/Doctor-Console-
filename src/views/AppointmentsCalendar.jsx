@@ -169,16 +169,29 @@ export default function AppointmentsCalendar({ onOpenVisit }) {
     }
   }
 
+  // The toast reports what ACTUALLY happened to the message, not what was
+  // attempted. The appointment is saved either way — the server returns ok
+  // even when the send fails, because a booked slot must survive a failed
+  // message — so a toast that always says "sent on WhatsApp" would be
+  // telling reception the patient knows, when they may not.
+  function saidToast(verb, ev, notified) {
+    const first = firstName(ev.name);
+    if (ev.whatsappOff) return verb + ' — call ' + first + ' with the details';
+    if (notified && notified.sent) {
+      return verb === 'Rescheduled'
+        ? 'Rescheduled — new time sent to ' + first + ' on WhatsApp'
+        : 'Appointment cancelled — ' + first + ' has been told on WhatsApp';
+    }
+    return verb + " — the WhatsApp message didn't go. Call " + first + '.';
+  }
+
   async function doReschedule(ev, date, time) {
     setBusy(true); setActionError('');
     try {
-      await rescheduleAppointment({ appointmentId: ev.appointmentId, date, time });
+      const r = await rescheduleAppointment({ appointmentId: ev.appointmentId, date, time });
       await load(true);
       setSel(null);
-      const first = firstName(ev.name);
-      say(ev.whatsappOff
-        ? 'Rescheduled — call ' + first + ' with the new time'
-        : 'Rescheduled — new time sent to ' + first + ' on WhatsApp');
+      say(saidToast('Rescheduled', ev, r && r.notified));
     } catch (err) {
       setActionError(String((err && err.message) || 'Could not reschedule.'));
     } finally {
@@ -189,14 +202,11 @@ export default function AppointmentsCalendar({ onOpenVisit }) {
   async function doCancel(ev) {
     setBusy(true); setActionError('');
     try {
-      await cancelAppointment({ appointmentId: ev.appointmentId });
+      const r = await cancelAppointment({ appointmentId: ev.appointmentId });
       await load(true);
       setCancelFor(null);
       setSel(null);
-      const first = firstName(ev.name);
-      say(ev.whatsappOff
-        ? 'Appointment cancelled — call ' + first + ' to let them know'
-        : 'Appointment cancelled — ' + first + ' has been told on WhatsApp');
+      say(saidToast('Appointment cancelled', ev, r && r.notified));
     } catch (err) {
       setActionError(String((err && err.message) || 'Could not cancel.'));
       setCancelFor(null);
