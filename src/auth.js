@@ -173,9 +173,16 @@ async function refreshSession() {
               refreshToken: r.refreshToken, refreshExpiresAt: r.refreshExpiresAt });
       return r.token;
     } catch (err) {
-      // A replay means the session was deliberately destroyed; anything else
-      // means it simply ran out. Either way the user signs in again.
-      clearSession();
+      // Only a server that actually rejected the token ends the session.
+      //
+      // This used to clear on any throw, which meant a dropped request, a
+      // 500 or a CORS hiccup signed the doctor out mid-consultation — and
+      // when /auth/refresh was failing server-side on a reserved-word bug,
+      // that turned one broken endpoint into a sign-out every half hour.
+      // The refresh token is still valid in all those cases, so keeping it
+      // lets the next attempt succeed.
+      const status = err && err.status;
+      if (status === 401 || status === 403) clearSession();
       throw err;
     } finally {
       refreshInFlight = null;
