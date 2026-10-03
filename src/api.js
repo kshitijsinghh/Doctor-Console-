@@ -437,8 +437,22 @@ async function post(payload) {
   }
 }
 
-export function saveIntake({ mobile, name, age, gender, address, date }) {
-  return post({ action: 'saveIntake', mobile, name, age, gender, address, date });
+// patientId / newPatient say which patient on this number the intake is for.
+// Without them the server matched on the number alone and took the first row,
+// so adding a second person on a shared family phone edited the first one.
+export function saveIntake({ mobile, name, age, gender, address, date, patientId, newPatient }) {
+  const payload = { action: 'saveIntake', mobile, name, age, gender, address, date };
+  if (patientId) payload.patientId = patientId;
+  if (newPatient) payload.newPatient = true;
+  return post(payload);
+}
+
+// Moves or cancels the appointment on the Visits row and the clinic's Google
+// Calendar. The Appointments tab's own reschedule and cancel go to DynamoDB
+// through the WhatsApp service, which cannot see the sheet or the calendar.
+// An empty date cancels.
+export function setAppointment({ visitId, date, time }) {
+  return post({ action: 'setAppointment', visitId, date: date || '', time: time || '', noSnapshot: true });
 }
 
 // Edits a patient's details without creating a visit. Only the fields passed

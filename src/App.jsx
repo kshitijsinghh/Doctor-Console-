@@ -384,7 +384,10 @@ export default function App({ user, onLogout }) {
   async function startVisitForExisting(pid) {
     const p = db.patients[pid];
     if (!p) return;
-    const intakeData = { mobile: p.mobile, name: p.name, age: p.age, gender: p.gender, address: p.address || '', date: today() };
+    // patientId is explicit: this is a new visit for a patient the user
+    // picked by name, and on a shared family number the server cannot
+    // work that out from the mobile alone.
+    const intakeData = { mobile: p.mobile, name: p.name, age: p.age, gender: p.gender, address: p.address || '', date: today(), patientId: pid };
     const optNo = p.visits.length + 1;
     const optVid = pid + '_' + optNo;
     const optVisit = { visitId: optVid, no: optNo, date: today(), done: false, clinical: null, createdAt: new Date().toISOString() };
@@ -430,9 +433,18 @@ export default function App({ user, onLogout }) {
     }
     setIntakeError('');
 
-    const intakeData = { mobile: mm, name: form.name.trim(), age: form.age, gender: form.gender, address: (form.address || '').trim(), date: form.date };
     const allOnMobile = findAllByMobile(db, mm);
     const existingP = addAnother ? null : allOnMobile.find((p) => p.name.toLowerCase() === form.name.trim().toLowerCase());
+    // The screen already knows whether this is a returning patient, which one,
+    // or a new person on a number someone else already uses. Telling the
+    // server is what makes the second patient on a family phone a second
+    // record rather than an edit of the first.
+    const intakeData = {
+      mobile: mm, name: form.name.trim(), age: form.age, gender: form.gender,
+      address: (form.address || '').trim(), date: form.date,
+      patientId: existingP ? existingP.patientId : '',
+      newPatient: !existingP,
+    };
     const optPid = existingP ? existingP.patientId : 'P' + String(db.seq + 1).padStart(4, '0');
     const optNo = existingP ? existingP.visits.length + 1 : 1;
     const optVid = optPid + '_' + optNo;

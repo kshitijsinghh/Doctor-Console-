@@ -13,6 +13,7 @@ import FailedMessagesBanner from '../whatsapp/FailedMessagesBanner';
 import { apptBucket, firstName } from '../whatsapp/statusModel';
 import { Toast, addDays, fmtDay, fmtMin, parseYmd, todayYmd, toMinutes } from '../whatsapp/ui';
 import { cancelAppointment, listAppointments, rescheduleAppointment, sendMessage } from '../whatsapp/waApi';
+import { setAppointment } from '../api';
 import { useWa } from '../whatsapp/WaContext';
 
 const POLL_MS = 30000;
@@ -185,13 +186,31 @@ export default function AppointmentsCalendar({ onOpenVisit }) {
     return verb + " — the WhatsApp message didn't go. Call " + first + '.';
   }
 
+  // The WhatsApp service owns the appointment and the patient's message; the
+  // sheet and the clinic's Google Calendar are a separate system that knows
+  // nothing about either. Run second and deliberately not awaited into the
+  // failure path: the patient has already been told, so a calendar that did
+  // not follow is worth reporting but must not read as "the cancellation
+  // failed" and invite a second attempt.
+  async function syncSheetAndCalendar(ev, date, time) {
+    if (!ev || !ev.visitId) return '';
+    try {
+      const r = await setAppointment({ visitId: ev.visitId, date: date || '', time: time || '' });
+      if (r && r.calendarError) return ' Google Calendar was not updated — check it.';
+      return '';
+    } catch {
+      return ' Google Calendar was not updated — check it.';
+    }
+  }
+
   async function doReschedule(ev, date, time) {
     setBusy(true); setActionError('');
     try {
       const r = await rescheduleAppointment({ appointmentId: ev.appointmentId, date, time });
+      const calNote = await syncSheetAndCalendar(ev, date, time);
       await load(true);
       setSel(null);
-      say(saidToast('Rescheduled', ev, r && r.notified));
+      say(saidToast('Rescheduled', ev, r && r.notified) + calNote);
     } catch (err) {
       setActionError(String((err && err.message) || 'Could not reschedule.'));
     } finally {
@@ -203,10 +222,11 @@ export default function AppointmentsCalendar({ onOpenVisit }) {
     setBusy(true); setActionError('');
     try {
       const r = await cancelAppointment({ appointmentId: ev.appointmentId });
+      const calNote = await syncSheetAndCalendar(ev, '', '');
       await load(true);
       setCancelFor(null);
       setSel(null);
-      say(saidToast('Appointment cancelled', ev, r && r.notified));
+      say(saidToast('Appointment cancelled', ev, r && r.notified) + calNote);
     } catch (err) {
       setActionError(String((err && err.message) || 'Could not cancel.'));
       setCancelFor(null);
