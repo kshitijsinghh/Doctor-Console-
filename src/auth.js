@@ -46,9 +46,19 @@ function write(session) {
   try { localStorage.setItem(SESSION_KEY, JSON.stringify(session)); } catch { /* private mode */ }
 }
 
+// Fired whenever the session is destroyed, so the shell can show the login
+// screen instead of leaving a signed-out console looking signed in.
+//
+// Without this, a failed refresh wiped the session silently and the app
+// carried on: the Sheet, the PDFs and the org record are all reachable
+// without a token, so nothing visibly broke until a /whatsapp/* call came
+// back 403 with no explanation.
+export const SIGNED_OUT_EVENT = 'patientpad:signed-out';
+
 export function clearSession() {
   try { localStorage.removeItem(SESSION_KEY); } catch { /* ignore */ }
   try { localStorage.removeItem('clinic_auth'); } catch { /* the old forgeable key */ }
+  try { window.dispatchEvent(new Event(SIGNED_OUT_EVENT)); } catch { /* not a browser */ }
 }
 
 export function getStoredUser() {

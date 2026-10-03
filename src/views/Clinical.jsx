@@ -598,6 +598,9 @@ function PrescriptionSheet({ rx, onClose, clinicName, clinicAddress, doctorName,
     visitId: rx.visitId,
     docVersion: rx.dateLabel || '1',
     params: { issue_date: rx.dateLabel || '' },
+    // The template has a document header, so the server needs the generated
+    // file to upload to Meta. Until docxUrl exists there is nothing to send.
+    documentUrl: docxUrl,
   });
   const [docxUrl, setDocxUrl] = useState(null);
   const [docxLoading, setDocxLoading] = useState(false);
@@ -809,6 +812,7 @@ function ReceiptSheet({ receipt, onClose, clinicName, clinicAddress, doctorName,
     // visit is a different document and must be allowed through.
     docVersion: String(receipt.amountPaid || '') + '|' + (receipt.dateLabel || ''),
     params: { payment_date: receipt.dateLabel || '', amount: String(receipt.amountPaid || '') },
+    documentUrl: docxUrl,
   });
   const [docxUrl, setDocxUrl] = useState(null);
   const [docxLoading, setDocxLoading] = useState(false);

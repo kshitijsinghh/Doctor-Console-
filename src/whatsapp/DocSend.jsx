@@ -89,14 +89,34 @@ export function useDocSend({ useCase, patient, visitId, docVersion, params, docu
     }
   }, [state, useCase, patient, visitId, params, documentUrl, docVersion, poll]);
 
-  return { state, msg, error, stillTrying, optedOut, enabled: wa.enabled, send };
+  // A document use case cannot be sent before its file exists.
+  const needsDoc = useCase === 'EPRESCRIPTION' || useCase === 'PAYMENT_RECEIPT';
+  return { state, msg, error, stillTrying, optedOut, enabled: wa.enabled,
+    ready: !needsDoc || !!documentUrl, send };
 }
 
 /* ── The control ──────────────────────────────────────────────────────── */
 
 export function SendControl({ send, patient, phone }) {
-  const { state, stillTrying, optedOut, enabled, msg } = send;
+  const { state, stillTrying, optedOut, enabled, msg, ready } = send;
   if (!enabled || optedOut) return null;
+  // The document is still being generated. Offering the button here would
+  // send the server a null URL and produce a failure the user caused by
+  // being quick, which is not their mistake to see.
+  if (!ready) {
+    return (
+      <span style={{
+        minHeight: phone ? 48 : 36, padding: phone ? 0 : '0 15px',
+        borderRadius: phone ? 12 : 100, flex: phone ? 1 : undefined,
+        background: phone ? '#eef4f3' : 'rgba(255,255,255,.18)',
+        color: phone ? '#8aa8a3' : 'rgba(255,255,255,.75)',
+        fontWeight: 700, fontSize: phone ? 15 : 13.5,
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+      }}>
+        Preparing…
+      </span>
+    );
+  }
 
   const first = firstName(patient && patient.name);
   const at = fmtClock((msg && (msg.readAt || msg.deliveredAt || msg.sentAt)) || '');

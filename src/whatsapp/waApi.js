@@ -27,7 +27,16 @@ export function waConfigured() {
 
 async function waFetch(path, opts, ctx) {
   if (!waConfigured()) throw new Error('WhatsApp is not configured for this clinic.');
+
+  // Sending the request anyway produces a bare 403 from the gateway, which
+  // surfaces as "Couldn't send" and sends whoever is debugging it looking at
+  // templates and bindings. The session is the actual problem; say so.
   const token = await getAccessToken();
+  if (!token) {
+    const e = new Error('Your session has expired. Please sign in again.');
+    e.sessionExpired = true;
+    throw e;
+  }
   const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
   const timer = ctrl ? setTimeout(() => ctrl.abort(), TIMEOUT_MS) : null;
   const t0 = Date.now();
