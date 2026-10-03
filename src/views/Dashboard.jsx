@@ -1,6 +1,7 @@
 import { useState } from 'react';
 
 import { TOUCH_BTN } from '../styles';
+import FailedMessagesBanner from '../whatsapp/FailedMessagesBanner';
 
 function pad2(n) { return String(n).padStart(2, '0'); }
 function ymd(dt) { return dt.getFullYear() + '-' + pad2(dt.getMonth() + 1) + '-' + pad2(dt.getDate()); }
@@ -85,6 +86,7 @@ export default function Dashboard({
 
   return (
     <div>
+      <FailedMessagesBanner />
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
         <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 8 }}>
           <div

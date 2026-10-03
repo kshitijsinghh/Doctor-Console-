@@ -93,4 +93,8 @@ input[type=number] {
     margin: 0 !important;
   }
   #rx-chrome { display: none !important; }
+  /* The WhatsApp strip and the phone action bar live inside #rx-overlay, so
+     they are visible by the rule above and would otherwise be printed onto
+     the prescription itself. */
+  .wa-noprint { display: none !important; }
 }

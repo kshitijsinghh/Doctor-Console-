@@ -1,5 +1,6 @@
 import { GENDERS } from '../options';
 import { TOUCH_BTN, FLUID_GRID_2COL } from '../styles';
+import WhatsAppDisclosure from '../whatsapp/WhatsAppDisclosure';
 
 const fieldStyle = {
   width: '100%', minHeight: 44, padding: '12px 14px', border: '1px solid #d6e7e3', borderRadius: 10,
@@ -120,6 +121,7 @@ export default function Intake({
                 Look up
               </button>
             </div>
+            <WhatsAppDisclosure />
 
             {lookupState === 'existing' && !addAnother && (
               <div style={{ marginTop: 14 }}>

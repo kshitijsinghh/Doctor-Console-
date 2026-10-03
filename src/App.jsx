@@ -4,9 +4,22 @@ import Dashboard from './views/Dashboard';
 import Intake from './views/Intake';
 import Clinical from './views/Clinical';
 import Appointments from './views/Appointments';
+import AppointmentsCalendar from './views/AppointmentsCalendar';
+import Messages from './views/Messages';
 import Patients from './views/Patients';
 import PatientDetail from './views/PatientDetail';
-import { fetchList, saveIntake, saveClinical, uploadQr, getCachedList, fetchOrg, getRxTemplateUrl, generatePrescriptionPdf, updatePatient } from './api';
+import { fetchList, saveIntake, saveClinical, uploadQr, getCachedList, fetchOrg, getRxTemplateUrl, generatePrescriptionPdf, updatePatient, logEvent } from './api';
+import { WaProvider, useWa } from './whatsapp/WaContext';
+import { upsertAppointment } from './whatsapp/waApi';
+
+// The old Appointments list and the new calendar are two components, not one
+// component with a flag inside it. A clinic that is not part of the WhatsApp
+// rollout renders exactly the code it rendered yesterday.
+function AppointmentsSwitch({ legacy, onOpenVisit }) {
+  const wa = useWa();
+  if (!wa.ready) return null;
+  return wa.enabled ? <AppointmentsCalendar onOpenVisit={onOpenVisit} /> : <Appointments {...legacy} />;
+}
 
 function today() {
   const d = new Date();
@@ -134,6 +147,7 @@ export default function App({ user, onLogout }) {
   const [showQr, setShowQr] = useState(false);
   const [clinicalReadOnly, setClinicalReadOnly] = useState(false);
   const [org, setOrg] = useState(null);
+  const [orgLoaded, setOrgLoaded] = useState(false);
   const [rxTemplateUrl, setRxTemplateUrl] = useState(null);
 
   function applySnapshot(res) {
@@ -197,6 +211,34 @@ export default function App({ user, onLogout }) {
     return res;
   }
 
+  // The appointment is mirrored into DynamoDB after the Sheet write succeeds.
+  //
+  // The Sheet stays the record of the visit; DynamoDB becomes the record of
+  // the appointment, because that is what the reminder scheduler reads, what
+  // reschedule and cancel update, and what has to be authoritative when a
+  // slot is given away. The mirror is deliberately after the save and
+  // deliberately swallowed: a failed mirror must never make a doctor think
+  // their clinical notes were lost.
+  function syncAppointment(saveForm) {
+    if (!org || !org.waEnabled) return;
+    if (!saveForm.nextAppointment) return;
+    const p = db && db.patients && db.patients[curPatientId];
+    if (!p) return;
+    const tr = Array.isArray(saveForm.treatment) ? saveForm.treatment.join(', ') : (saveForm.treatment || '');
+    upsertAppointment({
+      patientId: curPatientId,
+      visitId: curVisitId,
+      name: p.name,
+      mobile: p.mobile,
+      date: saveForm.nextAppointment,
+      time: saveForm.nextAppointmentTime || '',
+      treatment: tr || saveForm.treatmentOther || '',
+    }).catch((err) => {
+      logEvent({ kind: 'wa_request', op: 'upsertAppointment', outcome: 'api_error',
+        serverError: String((err && err.message) || ''), visitId: curVisitId });
+    });
+  }
+
   async function loadList(isRefresh) {
     if (isRefresh) setRefreshing(true); else setLoading(true);
     try {
@@ -224,7 +266,10 @@ export default function App({ user, onLogout }) {
       if (o?.rxTemplateKey && !o.rxTemplateKey.endsWith('.docx')) {
         getRxTemplateUrl().then(u => { if (u) setRxTemplateUrl(u); });
       }
-    });
+    // fetchOrg swallows its own errors and resolves null, so this fires
+    // either way — the WhatsApp provider must not wait forever on a clinic
+    // whose org record failed to load.
+    }).finally(() => setOrgLoaded(true));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -269,6 +314,9 @@ export default function App({ user, onLogout }) {
   }
   function goPatients() {
     pushView('patients');
+  }
+  function goMessages() {
+    pushView('messages');
   }
   function openPatientDetail(pid) {
     setDetailPid(pid);
@@ -455,6 +503,7 @@ export default function App({ user, onLogout }) {
       const res = await saveClinical({ patientId: curPatientId, visitId: curVisitId, cform: saveForm });
       if (res.patients) applySnapshot(res);
       else applyClinicalLocally(curPatientId, curVisitId, saveForm, res);
+      syncAppointment(saveForm);
     } catch (err) {
       setClinicalError(errText(err, 'Auto-save failed — your data is still in the form.'));
     } finally {
@@ -478,6 +527,7 @@ export default function App({ user, onLogout }) {
       const res = await saveClinical({ patientId: curPatientId, visitId: curVisitId, cform: saveForm });
       if (res.patients) applySnapshot(res);
       else applyClinicalLocally(curPatientId, curVisitId, saveForm, res);
+      syncAppointment(saveForm);
       setSavedFlash(true);
       setTimeout(() => {
         setSavedFlash(false);
@@ -753,8 +803,9 @@ export default function App({ user, onLogout }) {
       : apptCount + ' appointments already booked on this day.';
 
   return (
+    <WaProvider org={org} orgLoaded={orgLoaded}>
     <div style={{ minHeight: '100vh' }}>
-      <Header view={view} onGoDash={goDash} onGoAppts={goAppts} onGoPatients={goPatients} user={user} onLogout={onLogout} />
+      <Header view={view} onGoDash={goDash} onGoAppts={goAppts} onGoPatients={goPatients} onGoMessages={goMessages} user={user} onLogout={onLogout} />
       <main style={{ maxWidth: 1180, margin: '0 auto', padding: '26px 22px 60px' }}>
         {loadError && (
           <p style={{ color: '#c0392b', fontSize: 13, fontWeight: 600, marginBottom: 12 }}>{loadError}</p>
@@ -771,14 +822,19 @@ export default function App({ user, onLogout }) {
         )}
 
         {view === 'appointments' && (
-          <Appointments
-            appts={appts} hasAppts={appts.length > 0} noAppts={appts.length === 0}
-            apptDate={apptDate} onSetApptDate={setApptDate}
-            onApptToday={() => setApptDate(today())} apptDateLabel={apptDateLabel}
-            apptDatesMap={apptDatesMap}
-            showCal={showApptCal} onSetShowCal={setShowApptCal}
+          <AppointmentsSwitch
+            onOpenVisit={(pid, visitId) => openVisit(pid, visitId, true)}
+            legacy={{
+              appts, hasAppts: appts.length > 0, noAppts: appts.length === 0,
+              apptDate, onSetApptDate: setApptDate,
+              onApptToday: () => setApptDate(today()), apptDateLabel,
+              apptDatesMap,
+              showCal: showApptCal, onSetShowCal: setShowApptCal,
+            }}
           />
         )}
+
+        {view === 'messages' && <Messages />}
 
         {view === 'patients' && (
           <Patients
@@ -883,5 +939,6 @@ export default function App({ user, onLogout }) {
         </div>
       )}
     </div>
+    </WaProvider>
   );
 }

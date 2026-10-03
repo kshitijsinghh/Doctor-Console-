@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { buildRx, buildReceipt, normalizeClinical, ReceiptSheet, PrescriptionSheet, trTeethLabel, advTeethLabel } from './Clinical';
 import { getDocumentUrl } from '../api';
+import PatientWhatsAppCard, { OptedOutPill } from '../whatsapp/PatientWhatsApp';
 
 function num(x) { const n = parseFloat(x); return isNaN(n) ? 0 : n; }
 function inr(n) { return '₹' + Math.round(n).toLocaleString('en-IN'); }
@@ -285,6 +286,7 @@ export default function PatientDetail({ patient, patientId, onGoBack, onRenamePa
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'flex-end' }}>
           <span style={{ display: 'inline-block', padding: '5px 13px', borderRadius: 100, fontSize: 13, fontWeight: 700, background: stBg, color: stInk }}>{status}</span>
+          <OptedOutPill mobile={p.mobile} />
           <a href={'tel:' + p.mobile} title="Call patient"
             style={{
               display: 'inline-flex', alignItems: 'center', gap: 8, padding: '9px 16px', borderRadius: 10,
@@ -313,6 +315,8 @@ export default function PatientDetail({ patient, patientId, onGoBack, onRenamePa
           <span style={{ display: 'block', fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: 22, color: '#c0392b', marginTop: 2 }}>{inr(outstanding)}</span>
         </div>
       </div>
+
+      <PatientWhatsAppCard patientId={patientId} patientName={p.name} mobile={p.mobile} />
 
       <div style={{ background: '#fff', border: '1px solid #dfece9', borderRadius: 18, padding: '20px 22px', marginTop: 16 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12 }}>

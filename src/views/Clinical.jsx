@@ -5,6 +5,9 @@ import {
 } from '../options';
 import { TOUCH_BTN, FLUID_GRID_2COL } from '../styles';
 import { getUploadUrl, uploadToS3, getDocumentUrl, generatePrescriptionPdf, generateReceiptPdf, savePayment, getClinicId, logEvent } from '../api';
+import { DocPopupHeader, PhoneActionBar, SendStrip, useDocSend } from '../whatsapp/DocSend';
+import NextAppointmentNotice from '../whatsapp/NextAppointmentNotice';
+import { useIsPhone } from '../whatsapp/ui';
 
 // Rasterize a server-generated HTML document (fetched from its URL) into a jsPDF instance.
 async function renderUrlToPdf(url) {
@@ -584,6 +587,18 @@ function DownloadButton({ onDownload, label }) {
 
 function PrescriptionSheet({ rx, onClose, clinicName, clinicAddress, doctorName, doctorQualification, rxTemplateUrl, hasDocxTemplate }) {
   const hasImageTemplate = !!rxTemplateUrl && !hasDocxTemplate;
+  const isPhone = useIsPhone();
+  const waPatient = { patientId: rx.patientId, name: rx.name, mobile: rx.mobile };
+  // docVersion is the visit id plus the date on the document: re-opening the
+  // same prescription re-uses the key and cannot send twice, while a genuinely
+  // re-issued one gets a new key and can.
+  const waSend = useDocSend({
+    useCase: 'EPRESCRIPTION',
+    patient: waPatient,
+    visitId: rx.visitId,
+    docVersion: rx.dateLabel || '1',
+    params: { issue_date: rx.dateLabel || '' },
+  });
   const [docxUrl, setDocxUrl] = useState(null);
   const [docxLoading, setDocxLoading] = useState(false);
   const [docxError, setDocxError] = useState(null);
@@ -612,9 +627,17 @@ function PrescriptionSheet({ rx, onClose, clinicName, clinicAddress, doctorName,
   return (
     <div id="rx-overlay" style={{ position: 'fixed', inset: 0, zIndex: 90, background: 'rgba(14,59,57,.6)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 20, overflow: 'auto' }}>
       <div id="rx-sheet" onClick={(e) => e.stopPropagation()} style={{ background: '#fff', borderRadius: 18, width: '100%', maxWidth: 720, overflow: 'hidden', margin: 'auto' }}>
-        <div id="rx-chrome" style={{ background: '#0e3b39', color: '#fff', padding: '14px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-          <span style={{ fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: 16 }}>E-Prescription</span>
-          <div style={{ display: 'flex', gap: 8 }}>
+        <DocPopupHeader
+          title="E-Prescription"
+          send={waSend}
+          patient={waPatient}
+          phone={isPhone}
+          onPrint={hasDocxTemplate ? (docxUrl ? () => printAsPdf(docxUrl) : null) : () => window.print()}
+          onDownload={hasDocxTemplate
+            ? (docxUrl ? () => downloadAsPdf(docxUrl, `Prescription_${rx.visitId || 'doc'}.pdf`) : null)
+            : () => downloadElementAsPdf('rx-print-body', `Prescription_${rx.visitId || 'doc'}.pdf`)}
+          onClose={onClose}
+          fallback={<>
             {hasDocxTemplate && docxUrl && (
               <button onClick={() => printAsPdf(docxUrl)} style={{ padding: '8px 15px', borderRadius: 9, border: '1px solid rgba(255,255,255,.3)', background: 'transparent', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Print</button>
             )}
@@ -627,9 +650,9 @@ function PrescriptionSheet({ rx, onClose, clinicName, clinicAddress, doctorName,
             {!hasDocxTemplate && (
               <DownloadButton onDownload={() => downloadElementAsPdf('rx-print-body', `Prescription_${rx.visitId || 'doc'}.pdf`)} />
             )}
-            <button onClick={onClose} style={{ width: 32, height: 32, borderRadius: 8, border: 0, background: 'rgba(255,255,255,.15)', color: '#fff', fontSize: 15, cursor: 'pointer' }}>✕</button>
-          </div>
-        </div>
+          </>}
+        />
+        <SendStrip send={waSend} patient={waPatient} />
 
         {/* DOCX template mode — show generated document in iframe */}
         {hasDocxTemplate && (
@@ -759,6 +782,16 @@ function PrescriptionSheet({ rx, onClose, clinicName, clinicAddress, doctorName,
           </div>
         </div>
         )}
+        {waSend.enabled && isPhone && (
+          <PhoneActionBar
+            send={waSend}
+            patient={waPatient}
+            onDownload={() => (hasDocxTemplate && docxUrl
+              ? downloadAsPdf(docxUrl, `Prescription_${rx.visitId || 'doc'}.pdf`)
+              : downloadElementAsPdf('rx-print-body', `Prescription_${rx.visitId || 'doc'}.pdf`))}
+            onPrint={() => (hasDocxTemplate && docxUrl ? printAsPdf(docxUrl) : window.print())}
+          />
+        )}
       </div>
     </div>
   );
@@ -766,6 +799,17 @@ function PrescriptionSheet({ rx, onClose, clinicName, clinicAddress, doctorName,
 
 /* ── Print-ready Receipt sheet ── */
 function ReceiptSheet({ receipt, onClose, clinicName, clinicAddress, doctorName, hasReceiptTemplate, onPaymentSaved }) {
+  const isPhone = useIsPhone();
+  const waPatient = { patientId: receipt.patientId, name: receipt.name, mobile: receipt.mobile };
+  const waSend = useDocSend({
+    useCase: 'PAYMENT_RECEIPT',
+    patient: waPatient,
+    visitId: receipt.visitId,
+    // The amount is part of the version: a corrected receipt for the same
+    // visit is a different document and must be allowed through.
+    docVersion: String(receipt.amountPaid || '') + '|' + (receipt.dateLabel || ''),
+    params: { payment_date: receipt.dateLabel || '', amount: String(receipt.amountPaid || '') },
+  });
   const [docxUrl, setDocxUrl] = useState(null);
   const [docxLoading, setDocxLoading] = useState(false);
   const [docxError, setDocxError] = useState(null);
@@ -805,9 +849,17 @@ function ReceiptSheet({ receipt, onClose, clinicName, clinicAddress, doctorName,
   return (
     <div id="rx-overlay" style={{ position: 'fixed', inset: 0, zIndex: 90, background: 'rgba(14,59,57,.6)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 20, overflow: 'auto' }}>
       <div id="rx-sheet" onClick={(e) => e.stopPropagation()} style={{ background: '#fff', borderRadius: 18, width: '100%', maxWidth: hasReceiptTemplate ? 720 : 560, overflow: 'hidden', margin: 'auto' }}>
-        <div id="rx-chrome" style={{ background: '#0e3b39', color: '#fff', padding: '14px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-          <span style={{ fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: 16 }}>Payment Receipt</span>
-          <div style={{ display: 'flex', gap: 8 }}>
+        <DocPopupHeader
+          title="Payment Receipt"
+          send={waSend}
+          patient={waPatient}
+          phone={isPhone}
+          onPrint={hasReceiptTemplate ? (docxUrl ? () => printAsPdf(docxUrl) : null) : () => window.print()}
+          onDownload={hasReceiptTemplate
+            ? (docxUrl ? () => downloadAsPdf(docxUrl, `Receipt_${receipt.visitId || 'doc'}.pdf`) : null)
+            : () => downloadElementAsPdf('rc-print-body', `Receipt_${receipt.visitId || 'doc'}.pdf`)}
+          onClose={onClose}
+          fallback={<>
             {hasReceiptTemplate && docxUrl && (
               <button onClick={() => printAsPdf(docxUrl)} style={{ padding: '8px 15px', borderRadius: 9, border: '1px solid rgba(255,255,255,.3)', background: 'transparent', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Print</button>
             )}
@@ -820,9 +872,9 @@ function ReceiptSheet({ receipt, onClose, clinicName, clinicAddress, doctorName,
             {!hasReceiptTemplate && (
               <DownloadButton onDownload={() => downloadElementAsPdf('rc-print-body', `Receipt_${receipt.visitId || 'doc'}.pdf`)} />
             )}
-            <button onClick={onClose} style={{ width: 32, height: 32, borderRadius: 8, border: 0, background: 'rgba(255,255,255,.15)', color: '#fff', fontSize: 15, cursor: 'pointer' }}>✕</button>
-          </div>
-        </div>
+          </>}
+        />
+        <SendStrip send={waSend} patient={waPatient} />
 
         {hasReceiptTemplate && (
           <div style={{ minHeight: 400 }}>
@@ -899,6 +951,16 @@ function ReceiptSheet({ receipt, onClose, clinicName, clinicAddress, doctorName,
           </div>
         </div>
         )}
+        {waSend.enabled && isPhone && (
+          <PhoneActionBar
+            send={waSend}
+            patient={waPatient}
+            onDownload={() => (hasReceiptTemplate && docxUrl
+              ? downloadAsPdf(docxUrl, `Receipt_${receipt.visitId || 'doc'}.pdf`)
+              : downloadElementAsPdf('rc-print-body', `Receipt_${receipt.visitId || 'doc'}.pdf`))}
+            onPrint={() => (hasReceiptTemplate && docxUrl ? printAsPdf(docxUrl) : window.print())}
+          />
+        )}
       </div>
     </div>
   );
@@ -925,6 +987,15 @@ export default function Clinical({
   const [step, setStep] = useState(1);
   const [detailVisit, setDetailVisit] = useState(null);
   const [showAllHistory, setShowAllHistory] = useState(false);
+  // The appointment as last saved, so the notice can tell "setting a date"
+  // apart from "moving one the patient has already been told about". Read
+  // from the stored visit, never from the form, which is the new value.
+  const savedVisit = ((db && db.patients && db.patients[curPatientId] && db.patients[curPatientId].visits) || [])
+    .find((v) => v.visitId === cur.visitId);
+  const savedAppt = {
+    date: (savedVisit && savedVisit.clinical && savedVisit.clinical.nextAppointment) || '',
+    time: (savedVisit && savedVisit.clinical && savedVisit.clinical.nextAppointmentTime) || '',
+  };
   const [labOpen, setLabOpen] = useState(false);
   const [rxOpen, setRxOpen] = useState(false);
   const [rcOpen, setRcOpen] = useState(false);
@@ -1520,6 +1591,16 @@ export default function Clinical({
                     <TimePicker12h value={cform.nextAppointmentTime} onChange={(v) => onSetField('nextAppointmentTime', v)} />
                   </div>
                 )}
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <NextAppointmentNotice
+                    patientName={cur.name}
+                    mobile={cur.mobile}
+                    date={cform.nextAppointment}
+                    time={cform.nextAppointmentTime}
+                    prevDate={savedAppt.date}
+                    prevTime={savedAppt.time}
+                  />
+                </div>
               </>
             )}
             <div style={{ gridColumn: '1 / -1' }}>

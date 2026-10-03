@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { TOUCH_BTN } from '../styles';
+import MonthStats from '../whatsapp/MonthStats';
 
 function num(x) { const n = parseFloat(x); return isNaN(n) ? 0 : n; }
 function inr(n) { return '₹' + Math.round(n).toLocaleString('en-IN'); }
@@ -63,6 +64,7 @@ export default function Patients({ allPatients, outstandingTotal, onOpenPatient 
           <h2 style={{ fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: 22, color: '#0e3b39' }}>Patients</h2>
           <p style={{ color: '#5c7a76', fontSize: 14.5, marginTop: 2 }}>All registered patients, most recent visit first.</p>
         </div>
+
         {!isMobile && <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: '#5c7a76', fontWeight: 600 }}>
             From
@@ -93,6 +95,8 @@ export default function Patients({ allPatients, outstandingTotal, onOpenPatient 
           <span style={{ display: 'block', fontSize: 11.5, color: '#98b0ab', marginTop: 2 }}>Tap to view unpaid patients →</span>
         </div>
       </div>
+
+      <MonthStats />
 
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginBottom: 16 }}>
         <input className="fld" value={pq} onChange={(e) => setPq(e.target.value)} placeholder="Search name, mobile or ID…"

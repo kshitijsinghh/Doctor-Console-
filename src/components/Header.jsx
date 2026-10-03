@@ -1,14 +1,27 @@
 import { useState, useEffect } from 'react';
 import { TOUCH_BTN } from '../styles';
+import { WaGlyph } from '../whatsapp/ui';
+import { useWa } from '../whatsapp/WaContext';
 
-export default function Header({ view, onGoDash, onGoAppts, onGoPatients, user, onLogout }) {
+const MESSAGES_MIN_WIDTH = 900;
+
+export default function Header({ view, onGoDash, onGoAppts, onGoPatients, onGoMessages, user, onLogout }) {
   const [isMobile, setIsMobile] = useState(window.innerWidth < 760);
+  const [wide, setWide] = useState(window.innerWidth >= MESSAGES_MIN_WIDTH);
   const [accountOpen, setAccountOpen] = useState(false);
+  const wa = useWa();
+
+  // The Messages tab is not offered below 900px. Its own view explains why if
+  // someone lands there by resizing, but the nav should not advertise a tab
+  // that will tell you to go away.
+  const showMessages = wa.enabled && wide && !!onGoMessages;
 
   useEffect(() => {
     const onResize = () => {
       const m = window.innerWidth < 760;
       setIsMobile((prev) => (prev !== m ? m : prev));
+      const w = window.innerWidth >= MESSAGES_MIN_WIDTH;
+      setWide((prev) => (prev !== w ? w : prev));
     };
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
@@ -141,6 +154,12 @@ export default function Header({ view, onGoDash, onGoAppts, onGoPatients, user, 
           <button onClick={onGoPatients} style={{ ...TOUCH_BTN, padding: '9px 15px', borderRadius: 9, border: 0, cursor: 'pointer', fontWeight: 700, fontSize: 13.5, background: isPatView ? '#12a094' : 'rgba(255,255,255,.12)', color: '#fff' }}>
             Patients
           </button>
+          {showMessages && (
+            <button onClick={onGoMessages} style={{ ...TOUCH_BTN, padding: '9px 15px', borderRadius: 9, border: 0, cursor: 'pointer', fontWeight: 700, fontSize: 13.5, background: view === 'messages' ? '#12a094' : 'rgba(255,255,255,.12)', color: '#fff', gap: 7 }}>
+              <WaGlyph size={14} color="#fff" />
+              Messages
+            </button>
+          )}
           {avatarBtn(36, 4)}
           {accountOpen && signOutBtn}
         </nav>
