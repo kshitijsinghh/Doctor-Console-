@@ -11,7 +11,7 @@ import { WaGlyph, Spinner, fmtClock, fmtDay, fmtPhone } from '../ui';
 // sending `delivered`. A step is therefore drawn as reached when anything
 // later than it was reached, not only when its own timestamp exists.
 function Timeline({ msg }) {
-  const st = msgStatus(msg.status);
+  const st = msgStatus(msg.status, msg.reply);
   const hasReply = !!msg.reply;
   const reachedIdx = hasReply ? 3 : st === 'seen' ? 2 : st === 'delivered' ? 1 : st === 'failed' ? -1 : 0;
 
@@ -68,7 +68,7 @@ function Field({ label, children }) {
 export default function MessageDrawer({ msg, retrying, onClose, onRetry }) {
   if (!msg) return null;
 
-  const st = msgStatus(msg.status);
+  const st = msgStatus(msg.status, msg.reply);
   const look = msgLook(st);
   const trig = triggerLook(msg.useCase);
 

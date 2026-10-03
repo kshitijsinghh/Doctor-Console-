@@ -77,10 +77,15 @@ const MSG_LOOK = {
 
 export const MSG_FILTERS = ['All', 'Seen', 'Delivered', 'Sent', 'Not delivered'];
 
-export function msgStatus(raw) {
+export function msgStatus(raw, reply) {
   const s = String(raw || '').toLowerCase();
   if (s === 'failed') return 'failed';
   if (s === 'read' || s === 'seen') return 'seen';
+  // A patient who tapped a button has read the message. Meta only reports
+  // `read` when read receipts are on, so counting that alone shows "Seen 0"
+  // beside a log full of "Replied Coming" — which reads as a bug, not as a
+  // privacy setting. The same rule lives in core.mjs uiStatus().
+  if (reply) return 'seen';
   if (s === 'delivered') return 'delivered';
   return 'sent'; // queued and accepted both read as "Sent"; neither is worth a word of its own
 }

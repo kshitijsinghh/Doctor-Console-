@@ -10,7 +10,7 @@ import Patients from './views/Patients';
 import PatientDetail from './views/PatientDetail';
 import { fetchList, saveIntake, saveClinical, uploadQr, getCachedList, fetchOrg, getRxTemplateUrl, generatePrescriptionPdf, updatePatient, logEvent } from './api';
 import { WaProvider, useWa } from './whatsapp/WaContext';
-import { upsertAppointment } from './whatsapp/waApi';
+import { upsertAppointment, cancelAppointment } from './whatsapp/waApi';
 
 // The old Appointments list and the new calendar are two components, not one
 // component with a flag inside it. A clinic that is not part of the WhatsApp
@@ -221,9 +221,23 @@ export default function App({ user, onLogout }) {
   // their clinical notes were lost.
   function syncAppointment(saveForm) {
     if (!org || !org.waEnabled) return;
-    if (!saveForm.nextAppointment) return;
     const p = db && db.patients && db.patients[curPatientId];
     if (!p) return;
+
+    // The doctor cleared the next appointment. That has to cancel the
+    // mirrored row, not just skip it — otherwise the slot stays SCHEDULED
+    // in DynamoDB and the scheduler reminds the patient about a visit that
+    // is no longer happening, which is worse than never having sent one.
+    //
+    // A 404 is the ordinary case: this visit never had an appointment.
+    if (!saveForm.nextAppointment) {
+      cancelAppointment({ appointmentId: curVisitId }).catch((err) => {
+        if (/not found/i.test(String((err && err.message) || ''))) return;
+        logEvent({ kind: 'wa_request', op: 'cancelAppointment', outcome: 'api_error',
+          serverError: String((err && err.message) || ''), visitId: curVisitId });
+      });
+      return;
+    }
     const tr = Array.isArray(saveForm.treatment) ? saveForm.treatment.join(', ') : (saveForm.treatment || '');
     upsertAppointment({
       patientId: curPatientId,

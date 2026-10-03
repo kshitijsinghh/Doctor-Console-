@@ -361,7 +361,7 @@ export default function Messages() {
                   </thead>
                   <tbody>
                     {data.messages.map((m) => {
-                      const st = msgStatus(m.status);
+                      const st = msgStatus(m.status, m.reply);
                       const look = msgLook(st);
                       const trig = triggerLook(m.useCase);
                       return (

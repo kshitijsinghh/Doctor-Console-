@@ -67,7 +67,7 @@ export default function PatientWhatsAppCard({ patientId, patientName, mobile }) 
       {rows !== null && rows.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
           {rows.slice(0, 12).map((m) => {
-            const st = msgStatus(m.status);
+            const st = msgStatus(m.status, m.reply);
             const look = msgLook(st);
             const trig = triggerLook(m.useCase);
             return (
