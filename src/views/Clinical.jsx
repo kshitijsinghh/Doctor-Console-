@@ -68,8 +68,31 @@ async function downloadElementAsPdf(elementId, filename) {
   pdf.save(filename);
 }
 
-async function downloadAsPdf(url, filename) {
+// Saves the server's file as it stands. The anchor's download attribute is
+// ignored cross-origin, so the bytes go through a blob — which the browser
+// does honour.
+async function saveUrlAsFile(url, filename) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('Could not fetch the document (' + res.status + ')');
+  const href = URL.createObjectURL(await res.blob());
+  const a = document.createElement('a');
+  a.href = href;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(href), 10000);
+}
+
+// `format` is what /generate-pdf reported. Once LibreOffice was in place the
+// server started returning real PDFs, and rasterizing one of those re-renders
+// the file's own bytes as text: renderUrlToPdf reads the body with
+// res.text(), so "%PDF-1.5…" went into innerHTML and html2canvas dutifully
+// photographed it over fifteen pages. A PDF is saved as-is; only the HTML
+// fallback still needs rasterizing.
+async function downloadAsPdf(url, filename, format) {
   try {
+    if (format === 'pdf') { await saveUrlAsFile(url, filename); return; }
     const pdf = await renderUrlToPdf(url);
     pdf.save(filename);
   } catch (e) {
@@ -82,10 +105,21 @@ async function downloadAsPdf(url, filename) {
 
 // Print a server-generated document by converting it to a real PDF first — networked
 // MFP printers reliably print PDFs but often error on browser HTML print jobs.
-async function printAsPdf(url) {
+async function printAsPdf(url, format) {
   // Open the tab synchronously inside the click gesture so it isn't popup-blocked.
   const win = window.open('', '_blank');
   try {
+    if (format === 'pdf') {
+      // Already a PDF: hand the browser's own viewer the real file rather
+      // than a screenshot of it.
+      const res = await fetch(url);
+      if (!res.ok) throw new Error('Could not fetch the document (' + res.status + ')');
+      const blobUrl = URL.createObjectURL(await res.blob());
+      if (win) win.location.href = blobUrl;
+      else window.open(blobUrl, '_blank');
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+      return;
+    }
     const pdf = await renderUrlToPdf(url);
     pdf.autoPrint();
     const blobUrl = pdf.output('bloburl');
@@ -103,7 +137,7 @@ async function printAsPdf(url) {
 // should just look like the receipt. These fragment parameters turn that
 // furniture off and fit the page to the width of the pop-up. They are a
 // fragment, so they never reach S3 and cannot disturb the signed URL.
-function previewSrc(url, format) {
+export function previewSrc(url, format) {
   if (!url) return url;
   return format === 'pdf' ? url + '#toolbar=0&navpanes=0&scrollbar=0&view=FitH' : url;
 }
@@ -651,17 +685,17 @@ function PrescriptionSheet({ rx, onClose, clinicName, clinicAddress, doctorName,
           send={waSend}
           patient={waPatient}
           phone={isPhone}
-          onPrint={hasDocxTemplate ? (docxUrl ? () => printAsPdf(docxUrl) : null) : () => window.print()}
+          onPrint={hasDocxTemplate ? (docxUrl ? () => printAsPdf(docxUrl, docxFormat) : null) : () => window.print()}
           onDownload={hasDocxTemplate
-            ? (docxUrl ? () => downloadAsPdf(docxUrl, `Prescription_${rx.visitId || 'doc'}.pdf`) : null)
+            ? (docxUrl ? () => downloadAsPdf(docxUrl, `Prescription_${rx.visitId || 'doc'}.pdf`, docxFormat) : null)
             : () => downloadElementAsPdf('rx-print-body', `Prescription_${rx.visitId || 'doc'}.pdf`)}
           onClose={onClose}
           fallback={<>
             {hasDocxTemplate && docxUrl && (
-              <button onClick={() => printAsPdf(docxUrl)} style={{ padding: '8px 15px', borderRadius: 9, border: '1px solid rgba(255,255,255,.3)', background: 'transparent', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Print</button>
+              <button onClick={() => printAsPdf(docxUrl, docxFormat)} style={{ padding: '8px 15px', borderRadius: 9, border: '1px solid rgba(255,255,255,.3)', background: 'transparent', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Print</button>
             )}
             {hasDocxTemplate && docxUrl && (
-              <DownloadButton onDownload={() => downloadAsPdf(docxUrl, `Prescription_${rx.visitId || 'doc'}.pdf`)} />
+              <DownloadButton onDownload={() => downloadAsPdf(docxUrl, `Prescription_${rx.visitId || 'doc'}.pdf`, docxFormat)} />
             )}
             {!hasDocxTemplate && (
               <button onClick={() => window.print()} style={{ padding: '8px 15px', borderRadius: 9, border: '1px solid rgba(255,255,255,.3)', background: 'transparent', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Print</button>
@@ -806,9 +840,9 @@ function PrescriptionSheet({ rx, onClose, clinicName, clinicAddress, doctorName,
             send={waSend}
             patient={waPatient}
             onDownload={() => (hasDocxTemplate && docxUrl
-              ? downloadAsPdf(docxUrl, `Prescription_${rx.visitId || 'doc'}.pdf`)
+              ? downloadAsPdf(docxUrl, `Prescription_${rx.visitId || 'doc'}.pdf`, docxFormat)
               : downloadElementAsPdf('rx-print-body', `Prescription_${rx.visitId || 'doc'}.pdf`))}
-            onPrint={() => (hasDocxTemplate && docxUrl ? printAsPdf(docxUrl) : window.print())}
+            onPrint={() => (hasDocxTemplate && docxUrl ? printAsPdf(docxUrl, docxFormat) : window.print())}
           />
         )}
       </div>
@@ -876,17 +910,17 @@ function ReceiptSheet({ receipt, onClose, clinicName, clinicAddress, doctorName,
           send={waSend}
           patient={waPatient}
           phone={isPhone}
-          onPrint={hasReceiptTemplate ? (docxUrl ? () => printAsPdf(docxUrl) : null) : () => window.print()}
+          onPrint={hasReceiptTemplate ? (docxUrl ? () => printAsPdf(docxUrl, docxFormat) : null) : () => window.print()}
           onDownload={hasReceiptTemplate
-            ? (docxUrl ? () => downloadAsPdf(docxUrl, `Receipt_${receipt.visitId || 'doc'}.pdf`) : null)
+            ? (docxUrl ? () => downloadAsPdf(docxUrl, `Receipt_${receipt.visitId || 'doc'}.pdf`, docxFormat) : null)
             : () => downloadElementAsPdf('rc-print-body', `Receipt_${receipt.visitId || 'doc'}.pdf`)}
           onClose={onClose}
           fallback={<>
             {hasReceiptTemplate && docxUrl && (
-              <button onClick={() => printAsPdf(docxUrl)} style={{ padding: '8px 15px', borderRadius: 9, border: '1px solid rgba(255,255,255,.3)', background: 'transparent', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Print</button>
+              <button onClick={() => printAsPdf(docxUrl, docxFormat)} style={{ padding: '8px 15px', borderRadius: 9, border: '1px solid rgba(255,255,255,.3)', background: 'transparent', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Print</button>
             )}
             {hasReceiptTemplate && docxUrl && (
-              <DownloadButton onDownload={() => downloadAsPdf(docxUrl, `Receipt_${receipt.visitId || 'doc'}.pdf`)} />
+              <DownloadButton onDownload={() => downloadAsPdf(docxUrl, `Receipt_${receipt.visitId || 'doc'}.pdf`, docxFormat)} />
             )}
             {!hasReceiptTemplate && (
               <button onClick={() => window.print()} style={{ padding: '8px 15px', borderRadius: 9, border: '1px solid rgba(255,255,255,.3)', background: 'transparent', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Print</button>
@@ -978,9 +1012,9 @@ function ReceiptSheet({ receipt, onClose, clinicName, clinicAddress, doctorName,
             send={waSend}
             patient={waPatient}
             onDownload={() => (hasReceiptTemplate && docxUrl
-              ? downloadAsPdf(docxUrl, `Receipt_${receipt.visitId || 'doc'}.pdf`)
+              ? downloadAsPdf(docxUrl, `Receipt_${receipt.visitId || 'doc'}.pdf`, docxFormat)
               : downloadElementAsPdf('rc-print-body', `Receipt_${receipt.visitId || 'doc'}.pdf`))}
-            onPrint={() => (hasReceiptTemplate && docxUrl ? printAsPdf(docxUrl) : window.print())}
+            onPrint={() => (hasReceiptTemplate && docxUrl ? printAsPdf(docxUrl, docxFormat) : window.print())}
           />
         )}
       </div>

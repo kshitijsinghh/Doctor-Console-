@@ -2,7 +2,7 @@
 // error, a bad hook order or a missing import throws here — none of which a
 // Vite build or oxlint will tell you about.
 import { renderToString } from 'react-dom/server';
-import { PrescriptionSheet, ReceiptSheet } from '../src/views/Clinical.jsx';
+import { PrescriptionSheet, ReceiptSheet, previewSrc } from '../src/views/Clinical.jsx';
 import { WaProvider } from '../src/whatsapp/WaContext.jsx';
 import { docVersionForAttempt } from '../src/whatsapp/DocSend.jsx';
 import { idempotencyKeyFor } from '../src/whatsapp/waApi.js';
@@ -71,6 +71,25 @@ check('the two use cases never collide on the same attempt',
 check('different visits never collide on the same attempt',
   idempotencyKeyFor('P0001_68', 'PAYMENT_RECEIPT', docVersionForAttempt('04 Oct 2026', 1))
     !== idempotencyKeyFor('P0001_69', 'PAYMENT_RECEIPT', docVersionForAttempt('04 Oct 2026', 1)));
+
+
+/* ── Preview URL ─────────────────────────────────────────────────────────
+   A real PDF in an iframe gets the browser's own viewer furniture — toolbar,
+   zoom box, thumbnail rail — over what should just look like the document. */
+
+const signed = 'https://s3.amazonaws.com/c/receipt.pdf?X-Amz-Signature=abc&X-Amz-Date=1';
+
+check('a pdf preview suppresses the browser viewer chrome',
+  /#toolbar=0/.test(previewSrc(signed, 'pdf')) && /navpanes=0/.test(previewSrc(signed, 'pdf')),
+  previewSrc(signed, 'pdf'));
+check('the suppression is a fragment, so the signed query is untouched',
+  previewSrc(signed, 'pdf').split('#')[0] === signed, previewSrc(signed, 'pdf'));
+check('html previews are left exactly as they were',
+  previewSrc(signed, 'html') === signed, previewSrc(signed, 'html'));
+check('an unknown format is left alone rather than guessed at',
+  previewSrc(signed, undefined) === signed, previewSrc(signed, undefined));
+check('a missing url stays missing instead of becoming "#toolbar=0"',
+  previewSrc(null, 'pdf') === null, previewSrc(null, 'pdf'));
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

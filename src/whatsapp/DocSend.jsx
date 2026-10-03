@@ -276,21 +276,35 @@ function linkBtn(color) {
 /* ── The icon buttons that replace "Print / Save PDF" ─────────────────── */
 
 export function IconButton({ onClick, title, children, phone }) {
+  const [busy, setBusy] = useState(false);
   const size = phone ? 44 : 34;
+
+  // Fetching the document and handing it to the browser takes a moment, and
+  // without this the icon swallowed the click silently — which reads as a
+  // dead button and invites a second one.
+  async function go() {
+    if (busy || !onClick) return;
+    setBusy(true);
+    try { await onClick(); } catch (err) { console.error(title + ' failed:', err); } finally { setBusy(false); }
+  }
+
   return (
     <button
-      onClick={onClick}
+      onClick={go}
+      disabled={busy}
       title={title}
       aria-label={title}
+      aria-busy={busy || undefined}
       style={{
-        width: size, height: size, flexShrink: 0, borderRadius: phone ? 12 : 9, cursor: 'pointer',
+        width: size, height: size, flexShrink: 0, borderRadius: phone ? 12 : 9,
+        cursor: busy ? 'progress' : 'pointer',
         border: phone ? '1px solid #cfe3df' : 0,
         background: phone ? '#fff' : 'rgba(255,255,255,.15)',
         color: phone ? '#0e756c' : '#fff',
         display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0,
       }}
     >
-      {children}
+      {busy ? <Spinner /> : children}
     </button>
   );
 }
