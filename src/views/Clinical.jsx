@@ -589,6 +589,15 @@ function PrescriptionSheet({ rx, onClose, clinicName, clinicAddress, doctorName,
   const hasImageTemplate = !!rxTemplateUrl && !hasDocxTemplate;
   const isPhone = useIsPhone();
   const waPatient = { patientId: rx.patientId, name: rx.name, mobile: rx.mobile };
+  const [docxUrl, setDocxUrl] = useState(null);
+  const [docxLoading, setDocxLoading] = useState(false);
+  const [docxError, setDocxError] = useState(null);
+  const [docxFormat, setDocxFormat] = useState(null);
+
+  // Must come AFTER docxUrl is declared: `const` is in the temporal dead
+  // zone until its own line, so reading it above threw on every render and
+  // took the whole pop-up down with it.
+  //
   // docVersion is the visit id plus the date on the document: re-opening the
   // same prescription re-uses the key and cannot send twice, while a genuinely
   // re-issued one gets a new key and can.
@@ -602,10 +611,6 @@ function PrescriptionSheet({ rx, onClose, clinicName, clinicAddress, doctorName,
     // file to upload to Meta. Until docxUrl exists there is nothing to send.
     documentUrl: docxUrl,
   });
-  const [docxUrl, setDocxUrl] = useState(null);
-  const [docxLoading, setDocxLoading] = useState(false);
-  const [docxError, setDocxError] = useState(null);
-  const [docxFormat, setDocxFormat] = useState(null);
 
   useEffect(() => {
     if (!hasDocxTemplate) return;
@@ -804,6 +809,12 @@ function PrescriptionSheet({ rx, onClose, clinicName, clinicAddress, doctorName,
 function ReceiptSheet({ receipt, onClose, clinicName, clinicAddress, doctorName, hasReceiptTemplate, onPaymentSaved }) {
   const isPhone = useIsPhone();
   const waPatient = { patientId: receipt.patientId, name: receipt.name, mobile: receipt.mobile };
+  const [docxUrl, setDocxUrl] = useState(null);
+  const [docxLoading, setDocxLoading] = useState(false);
+  const [docxError, setDocxError] = useState(null);
+  const [docxFormat, setDocxFormat] = useState(null);
+
+  // After docxUrl, for the same reason as PrescriptionSheet.
   const waSend = useDocSend({
     useCase: 'PAYMENT_RECEIPT',
     patient: waPatient,
@@ -814,10 +825,6 @@ function ReceiptSheet({ receipt, onClose, clinicName, clinicAddress, doctorName,
     params: { payment_date: receipt.dateLabel || '', amount: String(receipt.amountPaid || '') },
     documentUrl: docxUrl,
   });
-  const [docxUrl, setDocxUrl] = useState(null);
-  const [docxLoading, setDocxLoading] = useState(false);
-  const [docxError, setDocxError] = useState(null);
-  const [docxFormat, setDocxFormat] = useState(null);
   const [paymentSaving, setPaymentSaving] = useState(false);
   const [paymentSaved, setPaymentSaved] = useState(false);
 
