@@ -4,7 +4,7 @@
 // about the same appointment and splitting them would mean passing the
 // appointment through three components to say one thing.
 
-import { useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import {
   apptLook, firstName, replyPill, replySub, waBlock,
   APPT_CANT, APPT_COMING, APPT_FAILED, APPT_NOT_SENT, APPT_OFF,
@@ -85,6 +85,16 @@ export function CancelModal({ ev, optedOut, busy, onKeep, onConfirm }) {
   );
 }
 
+// Where a popover of `panelHeight` should sit so it stays fully on screen,
+// given where its event is. Pulled out so the arithmetic can be tested: the
+// bug was that the panel grew when the reschedule section opened and nothing
+// re-checked whether the bottom still fit.
+export function fitTop(anchorTop, panelHeight, viewportHeight, gap = 12) {
+  const want = Math.max(gap, anchorTop || 80);
+  const highest = Math.max(gap, viewportHeight - panelHeight - gap);
+  return Math.min(want, highest);
+}
+
 export default function EventPopover({
   ev, anchor, isMobile, optedOut, busy, error,
   onClose, onSendNow, onReschedule, onAskCancel, onOpenVisit,
@@ -92,6 +102,23 @@ export default function EventPopover({
   const [resOpen, setResOpen] = useState(false);
   const [resDate, setResDate] = useState(ev ? ev.date : '');
   const [resTime, setResTime] = useState(ev ? toTimeInput(ev.startMin) : '');
+
+  // Where the popover actually sits, measured rather than guessed.
+  //
+  // The position used to be clamped against a hard-coded 440px height. Open
+  // the reschedule panel and the popover grows well past that, so its bottom
+  // — and the Save button with it — fell off the screen with no way to reach
+  // it. Measuring after every render that can change the height lifts it
+  // back into view instead.
+  const panelRef = useRef(null);
+  const [fittedTop, setFittedTop] = useState(null);
+
+  useLayoutEffect(() => {
+    if (isMobile || !ev) { setFittedTop(null); return; }
+    const el = panelRef.current;
+    if (!el) return;
+    setFittedTop(fitTop((anchor && anchor.top) || 80, el.offsetHeight, window.innerHeight));
+  }, [isMobile, anchor, resOpen, ev && ev.appointmentId]);
 
   if (!ev) return null;
 
@@ -123,6 +150,12 @@ export default function EventPopover({
     }
   }
 
+  // Until the first measurement lands, fall back to the old estimate so the
+  // popover does not flash at the top of the screen.
+  const desktopTop = fittedTop == null
+    ? Math.min(Math.max(12, (anchor && anchor.top) || 80), Math.max(12, window.innerHeight - 440))
+    : fittedTop;
+
   const shell = isMobile
     ? {
       position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 110, background: '#fff',
@@ -132,9 +165,11 @@ export default function EventPopover({
     : {
       position: 'fixed', zIndex: 110, width: 380,
       left: Math.min(Math.max(12, (anchor && anchor.left) || 40), Math.max(12, window.innerWidth - 392)),
-      top: Math.min(Math.max(12, (anchor && anchor.top) || 80), Math.max(12, window.innerHeight - 440)),
+      top: desktopTop,
       background: '#fff', border: '1px solid #dfece9', borderRadius: 20,
-      maxHeight: 'calc(100vh - 24px)', overflowY: 'auto',
+      // Derived from the real top, not from the viewport alone: with a fixed
+      // `top`, a max-height of 100vh still lets the panel run off the bottom.
+      maxHeight: 'calc(100vh - ' + (desktopTop + 12) + 'px)', overflowY: 'auto',
       boxShadow: '0 28px 60px -18px rgba(14,59,57,.5)',
     };
 
@@ -151,7 +186,7 @@ export default function EventPopover({
         onClick={onClose}
         style={{ position: 'fixed', inset: 0, zIndex: 105, background: isMobile ? 'rgba(14,59,57,.45)' : 'transparent' }}
       />
-      <div style={shell}>
+      <div ref={panelRef} style={shell}>
         <div style={{ padding: '16px 18px 0', display: 'flex', alignItems: 'flex-start', gap: 11 }}>
           <span style={{ flexShrink: 0, width: 15, height: 15, borderRadius: 5, marginTop: 5, background: look.bar }} />
           <div style={{ flex: 1, minWidth: 0 }}>

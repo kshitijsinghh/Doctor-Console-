@@ -5,6 +5,7 @@ import { renderToString } from 'react-dom/server';
 import { PrescriptionSheet, ReceiptSheet, previewSrc } from '../src/views/Clinical.jsx';
 import { WaProvider } from '../src/whatsapp/WaContext.jsx';
 import { fmtClock, fmtDay, fmtDayOf } from '../src/whatsapp/ui.jsx';
+import { fitTop } from '../src/whatsapp/appointments/EventPopover.jsx';
 import { docVersionForAttempt } from '../src/whatsapp/DocSend.jsx';
 import { idempotencyKeyFor } from '../src/whatsapp/waApi.js';
 import { createElement as h } from 'react';
@@ -117,6 +118,32 @@ check('no timestamp renders as empty, not "Invalid Date"',
   [fmtDayOf(null), fmtDayOf(undefined), fmtDayOf('')]);
 check('an unparseable timestamp renders as empty',
   fmtDayOf('not a date') === '', fmtDayOf('not a date'));
+
+
+/* ── Popover placement ───────────────────────────────────────────────────
+   Opening the reschedule section makes the popover taller. The old code
+   clamped against a hard-coded 440px, so the extra height — and the Save
+   button at the bottom of it — went off the screen with no way to reach it. */
+
+const VH = 900;
+
+check('a popover near the top sits where its event is',
+  fitTop(100, 420, VH) === 100, fitTop(100, 420, VH));
+check('a short popover low down still fits',
+  fitTop(600, 200, VH) + 200 + 12 <= VH, fitTop(600, 200, VH));
+check('a tall popover is lifted so its bottom stays on screen',
+  fitTop(600, 700, VH) + 700 + 12 <= VH, fitTop(600, 700, VH));
+check('growing the panel moves it up rather than off the bottom',
+  fitTop(600, 700, VH) < fitTop(600, 200, VH),
+  [fitTop(600, 200, VH), fitTop(600, 700, VH)]);
+check('the old 440 assumption is what failed for a reschedule-height panel',
+  Math.min(Math.max(12, 600), Math.max(12, VH - 440)) + 700 > VH);
+check('a panel taller than the viewport pins to the top gap, not a negative',
+  fitTop(600, 2000, VH) === 12, fitTop(600, 2000, VH));
+check('an anchor above the viewport is clamped to the gap',
+  fitTop(-50, 300, VH) === 12, fitTop(-50, 300, VH));
+check('a missing anchor falls back to a sane default',
+  fitTop(0, 300, VH) === 80, fitTop(0, 300, VH));
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

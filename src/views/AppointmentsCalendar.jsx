@@ -89,10 +89,19 @@ export default function AppointmentsCalendar({ onOpenVisit }) {
   const from = days[0];
   const to = days[days.length - 1];
 
+  // Always fetch the whole week, even in day mode. The phone's day strip
+  // spans seven days and puts a dot on the ones that have appointments, so
+  // fetching only the selected day left every other dot blank — the data to
+  // draw them had never been asked for. eventsByDay and inView are both
+  // scoped to `days`, so the extra rows change nothing that is rendered, and
+  // moving between days within a week no longer refetches.
+  const fetchFrom = useMemo(() => startOfWeek(anchorDate), [anchorDate]);
+  const fetchTo = useMemo(() => addDays(startOfWeek(anchorDate), 6), [anchorDate]);
+
   const load = useCallback(async (quiet) => {
     if (!quiet) setLoading(true);
     try {
-      const rows = await listAppointments({ from, to });
+      const rows = await listAppointments({ from: fetchFrom, to: fetchTo });
       setAppts(rows);
       setLoadError('');
     } catch (err) {
@@ -101,7 +110,7 @@ export default function AppointmentsCalendar({ onOpenVisit }) {
     } finally {
       if (!quiet) setLoading(false);
     }
-  }, [from, to]);
+  }, [fetchFrom, fetchTo]);
 
   useEffect(() => { load(false); }, [load]);
 

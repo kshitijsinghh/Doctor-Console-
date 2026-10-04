@@ -11,6 +11,7 @@ import PatientDetail from './views/PatientDetail';
 import { fetchList, saveIntake, saveClinical, uploadQr, getCachedList, fetchOrg, getRxTemplateUrl, generatePrescriptionPdf, updatePatient, logEvent } from './api';
 import { WaProvider, useWa } from './whatsapp/WaContext';
 import { upsertAppointment, cancelAppointment } from './whatsapp/waApi';
+import { useIsPhone } from './whatsapp/ui';
 
 // The old Appointments list and the new calendar are two components, not one
 // component with a flag inside it. A clinic that is not part of the WhatsApp
@@ -19,6 +20,41 @@ function AppointmentsSwitch({ legacy, onOpenVisit }) {
   const wa = useWa();
   if (!wa.ready) return null;
   return wa.enabled ? <AppointmentsCalendar onOpenVisit={onOpenVisit} /> : <Appointments {...legacy} />;
+}
+
+// The floating "New Visit" button.
+//
+// It used to hide on the appointments tab only when `showApptCal` was set —
+// but that flag belongs to the LEGACY appointments view. A clinic with
+// WhatsApp on renders AppointmentsCalendar instead and never sets it, so the
+// button stayed, floating over the calendar. On a phone it covers the grid
+// outright, which is where it was reported.
+//
+// Lives in its own component because useWa() cannot be called by App, which
+// is what renders the provider.
+function NewVisitFab({ view, showApptCal, onClick }) {
+  const wa = useWa();
+  const isPhone = useIsPhone();
+  if (view !== 'dashboard' && view !== 'appointments' && view !== 'patients') return null;
+  if (view === 'appointments' && (showApptCal || (wa.enabled && isPhone))) return null;
+  return (
+    <button
+      onClick={onClick}
+      title="New visit"
+      aria-label="New visit"
+      style={{
+        position: 'fixed', right: 22, bottom: 22, zIndex: 70, height: 58, padding: '0 24px',
+        border: 0, borderRadius: 100, background: '#ef5a3c', color: '#fff', fontWeight: 700,
+        fontSize: 15.5, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 9,
+        boxShadow: '0 14px 30px -8px rgba(239,90,60,.55)',
+      }}
+    >
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round">
+        <path d="M12 5v14M5 12h14" />
+      </svg>
+      New Visit
+    </button>
+  );
 }
 
 function today() {
@@ -928,24 +964,7 @@ export default function App({ user, onLogout }) {
         )}
       </main>
 
-      {(view === 'dashboard' || view === 'appointments' || view === 'patients') && !(view === 'appointments' && showApptCal) && (
-        <button
-          onClick={goIntake}
-          title="New visit"
-          aria-label="New visit"
-          style={{
-            position: 'fixed', right: 22, bottom: 22, zIndex: 70, height: 58, padding: '0 24px',
-            border: 0, borderRadius: 100, background: '#ef5a3c', color: '#fff', fontWeight: 700,
-            fontSize: 15.5, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 9,
-            boxShadow: '0 14px 30px -8px rgba(239,90,60,.55)',
-          }}
-        >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round">
-            <path d="M12 5v14M5 12h14" />
-          </svg>
-          New Visit
-        </button>
-      )}
+      <NewVisitFab view={view} showApptCal={showApptCal} onClick={goIntake} />
 
       {(savingIntake || savingClinical) && (
         <div style={{
