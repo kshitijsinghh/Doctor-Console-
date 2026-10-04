@@ -365,7 +365,7 @@ export default function PortalApp() {
   const [myPatientId, setMyPatientId] = useState('');
 
   /* ── registration form ── */
-  const [reg, setReg] = useState({ mobile: '', name: '', age: '', gender: '' });
+  const [reg, setReg] = useState({ mobile: '', name: '', age: '', gender: '', address: '' });
   const [regError, setRegError] = useState('');
   const [regPickedId, setRegPickedId] = useState('');
   const [regAddingMember, setRegAddingMember] = useState(false);
@@ -523,7 +523,7 @@ export default function PortalApp() {
     } else {
       setMyPatientId('');
       setView('register');
-      setReg({ mobile: '', name: '', age: '', gender: '' });
+      setReg({ mobile: '', name: '', age: '', gender: '', address: '' });
       setRegError('');
       setRegPickedId('');
       setRegAddingMember(false);
@@ -774,7 +774,7 @@ export default function PortalApp() {
     } else {
       setMyPatientId('');
       setView('register');
-      setReg({ mobile, name: '', age: '', gender: '' });
+      setReg({ mobile, name: '', age: '', gender: '', address: '' });
       setRegError('');
       setRegPickedId('');
       setRegAddingMember(false);
@@ -843,9 +843,12 @@ export default function PortalApp() {
     const checkinName = regPickedId && db.patients[regPickedId] ? db.patients[regPickedId].name : reg.name.trim();
     const checkinAge = regPickedId && db.patients[regPickedId] ? db.patients[regPickedId].age : reg.age;
     const checkinGender = regPickedId && db.patients[regPickedId] ? db.patients[regPickedId].gender : reg.gender;
+    // Optional, exactly as it is on the clinic console's intake form.
+    const checkinAddress = regPickedId && db.patients[regPickedId]
+      ? (db.patients[regPickedId].address || '') : (reg.address || '').trim();
 
     try {
-      const res = await portalCheckin({ mobile, name: checkinName, age: checkinAge, gender: checkinGender, email: authedEmail });
+      const res = await portalCheckin({ mobile, name: checkinName, age: checkinAge, gender: checkinGender, address: checkinAddress, email: authedEmail });
       applySnapshot(res);
 
       const pid = res.patientId || db.order.find(id => {
@@ -860,7 +863,7 @@ export default function PortalApp() {
         setProblemSaved(false);
         setEditingProblem(false);
       }
-      setReg({ mobile: '', name: '', age: '', gender: '' });
+      setReg({ mobile: '', name: '', age: '', gender: '', address: '' });
       setRegPickedId('');
       setRegAddingMember(false);
       setIsAddingForFamily(false);
@@ -920,7 +923,7 @@ export default function PortalApp() {
     setRegAddingMember(true);
     setRegPickedId('');
     setRegError('');
-    setReg({ mobile: authedMobile || (me ? me.mobile : ''), name: '', age: '', gender: '' });
+    setReg({ mobile: authedMobile || (me ? me.mobile : ''), name: '', age: '', gender: '', address: '' });
     setMemberSheet(false);
   }
 
@@ -942,7 +945,7 @@ export default function PortalApp() {
     setRegAddingMember(false);
     setRegPickedId(myPatientId);
     setRegError('');
-    setReg({ mobile: authedMobile || me.mobile, name: me.name, age: me.age, gender: me.gender });
+    setReg({ mobile: authedMobile || me.mobile, name: me.name, age: me.age, gender: me.gender, address: me.address || '' });
   }
 
   /* ─── switch to another family member ─── */
@@ -1455,7 +1458,7 @@ export default function PortalApp() {
                             setRegPickedId(m.patientId);
                             setRegAddingMember(false);
                             setRegError('');
-                            setReg(r => ({ ...r, name: m.name, age: m.age, gender: m.gender }));
+                            setReg(r => ({ ...r, name: m.name, age: m.age, gender: m.gender, address: m.address || '' }));
                           }} style={{
                             textAlign: 'left', width: '100%', display: 'flex', alignItems: 'center', gap: 12,
                             padding: 13, border: selected ? '2px solid #12a094' : '1px solid #e2efec',
@@ -1518,6 +1521,15 @@ export default function PortalApp() {
                           {GENDERS.map(g => <option key={g} value={g}>{g}</option>)}
                         </select>
                       </div>
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontWeight: 700, fontSize: '13.5px', marginBottom: 7 }}>Address</label>
+                      <textarea
+                        className="fld" value={reg.address}
+                        onChange={e => setReg(r => ({ ...r, address: e.target.value }))}
+                        placeholder="House / street, area, city" rows={2} readOnly={!!regPickedId}
+                        style={{ width: '100%', padding: '13px 14px', border: '1px solid #d6e7e3', borderRadius: 11, fontSize: 16, background: regPickedId ? '#f0f6f5' : '#f7fbfa', fontFamily: 'inherit', resize: 'vertical' }}
+                      />
                     </div>
                   </div>
                 )}

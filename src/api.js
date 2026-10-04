@@ -475,8 +475,8 @@ export function uploadQr({ dataUrl, filename }) {
   return post({ action: 'uploadQr', dataUrl, filename });
 }
 
-export function portalCheckin({ mobile, name, age, gender, email }) {
-  return post({ action: 'portalCheckin', mobile, name, age, gender, email });
+export function portalCheckin({ mobile, name, age, gender, address, email }) {
+  return post({ action: 'portalCheckin', mobile, name, age, gender, address, email });
 }
 
 export function savePatientProblem({ patientId, visitId, patientProblem }) {
