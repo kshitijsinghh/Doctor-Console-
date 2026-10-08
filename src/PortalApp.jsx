@@ -232,6 +232,53 @@ const SESSION_KEY = 'patient_session';
 const GENDERS = ['Male', 'Female', 'Other'];
 const CLINIC_NAME = 'PatientPad';
 
+// SMS one-time codes are built, tested and working; they are simply switched
+// off. Every clinic's patients are on WhatsApp, which costs the clinic less
+// and needs no Twilio account, so offering both only asked patients to make a
+// choice that has one sensible answer.
+//
+// Set VITE_PORTAL_SMS_OTP=true to bring the chooser back. Nothing else has to
+// change: requestPortalOtp, the verify path and the Firebase phone flow are
+// all left exactly as they are, and with the chooser hidden otpChannel simply
+// stays on its 'whatsapp' default.
+//
+// Exactly the string "true" switches it on. A flag that also accepted "1",
+// "yes" or "TRUE" would eventually be set to one of them somewhere and read as
+// off, and silently leaving SMS disabled is the failure nobody notices.
+export function smsOtpEnabled(env) {
+  return String((env && env.VITE_PORTAL_SMS_OTP) || '') === 'true';
+}
+
+const SMS_OTP_ENABLED = smsOtpEnabled(import.meta.env);
+
+// Extracted so the hidden case can be rendered on its own in a test: the
+// sign-in screen itself sits behind `loading`, which never clears without a
+// browser, so it cannot be reached by renderToString.
+export function OtpChannelChooser({ enabled, value, onChange }) {
+  if (!enabled) return null;
+  return (
+    <>
+      <label style={{ display: 'block', fontWeight: 700, fontSize: '13.5px', marginBottom: 7, color: '#0e3b39' }}>Where should we send your code?</label>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+        {[['whatsapp', 'WhatsApp'], ['sms', 'SMS']].map(([val, label]) => (
+          <button
+            key={val}
+            type="button"
+            onClick={() => onChange(val)}
+            style={{
+              flex: 1, padding: '11px 10px', borderRadius: 11, cursor: 'pointer',
+              fontWeight: 700, fontSize: '14px',
+              border: value === val ? '1.5px solid #0e756c' : '1px solid #d6e7e3',
+              background: value === val ? '#e6f4f2' : '#f7fbfa',
+              color: value === val ? '#0e756c' : '#5c7a76',
+            }}
+          >{label}</button>
+        ))}
+      </div>
+    </>
+  );
+}
+
 /* ─── tiny SVGs used across the portal ─── */
 const ClipboardIcon = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="4" width="14" height="17" rx="2.5"/><path d="M9 4a3 3 0 0 1 6 0"/><path d="M9 12h6M9 16h4"/></svg>
@@ -601,7 +648,11 @@ export default function PortalApp() {
         // The server's message is already patient-facing — it says whether
         // this is a rate limit or a delivery failure, and never whether the
         // number belongs to a patient here.
-        setAuthError(errText(err, 'Could not send the code on WhatsApp. Try SMS instead.'));
+        // Not "try SMS instead" when SMS is switched off — pointing a patient
+        // at a button that is not on their screen reads as a broken app.
+        setAuthError(errText(err, SMS_OTP_ENABLED
+          ? 'Could not send the code on WhatsApp. Try SMS instead.'
+          : 'Could not send the code on WhatsApp. Please try again, or continue with Google below.'));
       } finally {
         setSendingOtp(false);
       }
@@ -1323,23 +1374,13 @@ export default function PortalApp() {
                 ) : !otpStep ? (
                   <div style={{ marginTop: 20 }}>
                     <div style={{ textAlign: 'left' }}>
-                      <label style={{ display: 'block', fontWeight: 700, fontSize: '13.5px', marginBottom: 7, color: '#0e3b39' }}>Where should we send your code?</label>
-                      <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
-                        {[['whatsapp', 'WhatsApp'], ['sms', 'SMS']].map(([val, label]) => (
-                          <button
-                            key={val}
-                            type="button"
-                            onClick={() => { setOtpChannel(val); setAuthError(''); }}
-                            style={{
-                              flex: 1, padding: '11px 10px', borderRadius: 11, cursor: 'pointer',
-                              fontWeight: 700, fontSize: '14px',
-                              border: otpChannel === val ? '1.5px solid #0e756c' : '1px solid #d6e7e3',
-                              background: otpChannel === val ? '#e6f4f2' : '#f7fbfa',
-                              color: otpChannel === val ? '#0e756c' : '#5c7a76',
-                            }}
-                          >{label}</button>
-                        ))}
-                      </div>
+                      {/* With SMS off there is only one place a code can go,
+                          so the question is not worth asking. */}
+                      <OtpChannelChooser
+                        enabled={SMS_OTP_ENABLED}
+                        value={otpChannel}
+                        onChange={(val) => { setOtpChannel(val); setAuthError(''); }}
+                      />
                       <label style={{ display: 'block', fontWeight: 700, fontSize: '13.5px', marginBottom: 7, color: '#0e3b39' }}>Mobile number</label>
                       <input
                         value={loginMobile}
