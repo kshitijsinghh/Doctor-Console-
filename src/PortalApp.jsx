@@ -121,8 +121,8 @@ function dateParts(d) {
 }
 function findAllByMobile(db, mobile) {
   const mm = normMobile(mobile);
-  if (!mm || !db) return [];
-  return db.order.map(id => db.patients[id]).filter(p => p.mobile === mm);
+  if (!mm || !db || !db.order || !db.patients) return [];
+  return db.order.map(id => db.patients[id]).filter(p => p && p.mobile === mm);
 }
 function treatmentLabel(c) {
   if (!c) return '—';
@@ -481,8 +481,18 @@ export default function PortalApp() {
   const hasDocxReceiptTemplate = !!(org?.receiptTemplateKey?.endsWith('.docx'));
 
   /* ─── helpers for state ─── */
+  // A write answers with EITHER a scoped snapshot or a bare acknowledgement,
+  // depending on whether the server could identify the caller — a clinic
+  // still on authMode: off has no claims to scope by, so it sends the ack.
+  //
+  // Taking the ack for a snapshot set db.patients to undefined, and the next
+  // render of anything reading db.patients[...] threw and blanked the app.
+  // The shape is checked now rather than assumed; false means "nothing was
+  // applied, go and fetch properly".
   function applySnapshot(res) {
-    setDb({ patients: res.patients, order: res.order, seq: res.seq });
+    if (!res || !res.patients) return false;
+    setDb({ patients: res.patients, order: res.order || [], seq: res.seq });
+    return true;
   }
 
   /* ─── load data ─── */
@@ -490,7 +500,10 @@ export default function PortalApp() {
     if (isRefresh) setRefreshing(true); else setLoading(true);
     try {
       const res = await loadPortalData();
-      applySnapshot(res);
+      if (!applySnapshot(res)) {
+        setLoadError('Something went wrong, please try again');
+        return null;
+      }
       setLoadError('');
       return res;
     } catch (err) {
@@ -921,19 +934,25 @@ export default function PortalApp() {
 
     try {
       const res = await portalCheckin({ mobile, name: checkinName, age: checkinAge, gender: checkinGender, address: checkinAddress, email: checkinEmail });
-      applySnapshot(res);
+      // When the write came back as a bare ack, the records still have to be
+      // loaded from somewhere before the Today screen can render.
+      let snap = res;
+      if (!applySnapshot(res)) {
+        snap = await loadPortalData();
+        applySnapshot(snap);
+      }
 
-      const pid = res.patientId || db.order.find(id => {
-        const p = res.patients[id];
-        return p.mobile === mobile && p.name.toLowerCase() === checkinName.toLowerCase();
+      const pid = res.patientId || (snap.order || []).find(id => {
+        const p = snap.patients[id];
+        return p && p.mobile === mobile && (p.name || '').toLowerCase() === checkinName.toLowerCase();
       });
 
-      if (pid && res.patients[pid]) {
+      if (pid && snap.patients && snap.patients[pid]) {
         setMyPatientId(pid);
         setView('home');
         // From the freshly returned record, so a returning patient sees what
         // they told us last time rather than four empty boxes.
-        syncHealthDrafts(res.patients[pid]);
+        syncHealthDrafts(snap.patients[pid]);
       }
       setReg({ mobile: '', name: '', age: '', gender: '', address: '', email: '' });
       setRegPickedId('');
@@ -1002,7 +1021,10 @@ export default function PortalApp() {
     setHxError('');
     try {
       const res = await savePatientProblem({ patientId: myPatientId, visitId: openV.visitId, ...vals });
-      applySnapshot(res);
+      // Same here: a bare ack means the saved values are already correct in
+      // `hx` below, and the records are refreshed separately rather than
+      // being taken from a response that does not carry them.
+      if (!applySnapshot(res)) { try { applySnapshot(await loadPortalData()); } catch { /* the save succeeded; a stale list is not worth an error */ } }
       setHx({ problem: vals.patientProblem, medical: vals.patientMedicalHistory,
         allergies: vals.patientAllergies, dental: vals.patientDentalHistory });
       setHxSaved(true);
@@ -1016,6 +1038,80 @@ export default function PortalApp() {
     } finally {
       setSavingProblem(false);
     }
+  }
+
+  /* ─── navigation ─── */
+  function goHome() {
+    setView('home');
+    setDetailVisitId('');
+    setMemberSheet(false);
+  }
+  function goHistory() {
+    setView('records');
+    setDetailVisitId('');
+  }
+  function goFamily() {
+    setView('family');
+    setDetailVisitId('');
+    setMemberSheet(false);
+  }
+  function goRegisterForFamily() {
+    const me = db && db.patients[myPatientId];
+    setView('register');
+    setIsAddingForFamily(true);
+    setRegAddingMember(true);
+    setRegPickedId('');
+    setRegError('');
+    setReg({ mobile: authedMobile || (me ? me.mobile : ''), name: '', age: '', gender: '', address: '', email: '' });
+    setMemberSheet(false);
+  }
+
+  /* ─── check in with confirm-who flow ─── */
+  function handleCheckinCta() {
+    if (!me || !db) return;
+    const onMobile = findAllByMobile(db, me.mobile);
+    if (onMobile.length > 1) {
+      setConfirmWho(true);
+    } else {
+      doCheckinForMe();
+    }
+  }
+
+  function doCheckinForMe() {
+    setConfirmWho(false);
+    setView('register');
+    setIsAddingForFamily(false);
+    setRegAddingMember(false);
+    setRegPickedId(myPatientId);
+    setRegError('');
+    setReg({ mobile: authedMobile || me.mobile, name: me.name, age: me.age, gender: me.gender, address: me.address || '', email: me.email || '' });
+  }
+
+  /* ─── switch to another family member ─── */
+  function switchToMember(pid) {
+    setMyPatientId(pid);
+    setView('home');
+    setMemberSheet(false);
+    setDetailVisitId('');
+    const p = db.patients[pid];
+    if (p) {
+      const t = localToday();
+      const openV = p.visits.filter(v => !v.done && v.date === t).sort((a, b) => (b.no || 0) - (a.no || 0))[0];
+      if (openV && openV.clinical && openV.clinical.patientProblem) {
+        setProblemDraft(openV.clinical.patientProblem);
+        setProblemSaved(true);
+      } else {
+        setProblemDraft('');
+        setProblemSaved(false);
+      }
+      setEditingProblem(false);
+    }
+  }
+  function viewMemberRecords(pid) {
+    setMyPatientId(pid);
+    setView('records');
+    setMemberSheet(false);
+    setDetailVisitId('');
   }
 
   /* ─── open DOCX-template prescription/receipt ─── */
