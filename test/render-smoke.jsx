@@ -8,7 +8,7 @@ import { fmtClock, fmtDay, fmtDayOf } from '../src/whatsapp/ui.jsx';
 import { fitTop } from '../src/whatsapp/appointments/EventPopover.jsx';
 import { DAY_START_MIN, DAY_END_MIN } from '../src/whatsapp/appointments/WeekGrid.jsx';
 import { docVersionForAttempt } from '../src/whatsapp/DocSend.jsx';
-import { smsOtpEnabled, OtpChannelChooser } from '../src/PortalApp.jsx';
+import { smsOtpEnabled, OtpChannelChooser, portalHistoryEnabled } from '../src/PortalApp.jsx';
 import { idempotencyKeyFor } from '../src/whatsapp/waApi.js';
 import { createElement as h } from 'react';
 
@@ -234,6 +234,20 @@ check('every declared field reaches the doctor',
   ['Pain lower left', 'Diabetes', 'Latex', 'RCT 2022'].every((t) => full.includes(t)));
 check('the panel says where the information came from',
   /Filled in by the patient at check-in/.test(full));
+
+/* ── Visit history can be switched off per clinic ────────────────────────
+   On by default and off only for exactly "false". The defaults run opposite
+   to the SMS flag on purpose: there the accident to avoid is leaving SMS on,
+   here it is hiding a patient's own records by mistake. */
+
+check('history is on when nothing is set', portalHistoryEnabled({}) === true);
+check('...and when there is no env at all', portalHistoryEnabled(undefined) === true);
+check('exactly "false" switches it off', portalHistoryEnabled({ VITE_PORTAL_HISTORY: 'false' }) === false);
+check('"true" leaves it on', portalHistoryEnabled({ VITE_PORTAL_HISTORY: 'true' }) === true);
+for (const near of ['FALSE', 'False', '0', 'no', 'off', '']) {
+  check(`${JSON.stringify(near)} does NOT hide a patient's records`,
+    portalHistoryEnabled({ VITE_PORTAL_HISTORY: near }) === true, near);
+}
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

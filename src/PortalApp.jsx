@@ -252,6 +252,23 @@ export function smsOtpEnabled(env) {
 
 const SMS_OTP_ENABLED = smsOtpEnabled(import.meta.env);
 
+// Whether a patient may look back at their own past visits in the portal.
+//
+// Some clinics would rather a patient's record stayed a conversation with the
+// doctor rather than something read alone on a phone — a bare list of past
+// treatments and amounts invites questions the screen cannot answer. The data
+// is unchanged either way; this only decides whether the portal offers it.
+//
+// On unless VITE_PORTAL_HISTORY is exactly "false", so the clinics running
+// today keep what they have and a typo cannot silently hide a patient's
+// records. That is the opposite default from the SMS flag, where the risk of
+// an accident runs the other way.
+export function portalHistoryEnabled(env) {
+  return String((env && env.VITE_PORTAL_HISTORY) !== undefined ? env.VITE_PORTAL_HISTORY : '') !== 'false';
+}
+
+const HISTORY_ENABLED = portalHistoryEnabled(import.meta.env);
+
 // The four boxes a patient fills in while they wait, as data rather than four
 // near-identical blocks of JSX. The wording is the spec's and is patient-facing,
 // so it is kept together where it can be read as a whole.
@@ -1047,6 +1064,7 @@ export default function PortalApp() {
     setMemberSheet(false);
   }
   function goHistory() {
+    if (!HISTORY_ENABLED) return;
     setView('records');
     setDetailVisitId('');
   }
@@ -1108,6 +1126,7 @@ export default function PortalApp() {
     }
   }
   function viewMemberRecords(pid) {
+    if (!HISTORY_ENABLED) return;
     setMyPatientId(pid);
     setView('records');
     setMemberSheet(false);
@@ -1330,7 +1349,7 @@ export default function PortalApp() {
   const showRegFields = regMatches.length === 0 || regAddingMember || !!regPickedId;
 
   /* ── show bottom tabs when signed in and on home/records/family ── */
-  const showTabs = signedIn && me && (view === 'home' || view === 'records' || view === 'family');
+  const showTabs = signedIn && me && (view === 'home' || (HISTORY_ENABLED && view === 'records') || view === 'family');
 
   /* ── doc chip renderer (shared between Today done visit and History) ── */
   const DocChips = ({ visitId, hasRx, hasReceipt, hasFiles, filesCount }) => (
@@ -1898,7 +1917,7 @@ export default function PortalApp() {
           )}
 
           {/* ═══ 4. HISTORY (Records tab) ═══ */}
-          {view === 'records' && me && (
+          {view === 'records' && me && HISTORY_ENABLED && (
             <div>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
                 <div style={{ minWidth: 0 }}>
@@ -1975,19 +1994,19 @@ export default function PortalApp() {
           {view === 'family' && me && (
             <div>
               <h1 style={{ fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: 24, color: '#0e3b39' }}>Family</h1>
-              <p style={{ color: '#5c7a76', fontSize: '14.5px', marginTop: 2 }}>Everyone registered on this mobile number. Tap anyone to view their visit history.</p>
+              <p style={{ color: '#5c7a76', fontSize: '14.5px', marginTop: 2 }}>{HISTORY_ENABLED ? 'Everyone registered on this mobile number. Tap anyone to view their visit history.' : 'Everyone registered on this mobile number.'}</p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 16 }}>
                 {familyMembers.map(f => {
                   const isMe = f.isMe;
                   return (
                     <button key={f.patientId} onClick={() => {
-                      if (isMe) return;
+                      if (isMe || !HISTORY_ENABLED) return;
                       viewMemberRecords(f.patientId);
                     }} style={{
                       textAlign: 'left', width: '100%', display: 'flex', alignItems: 'center', gap: 13,
                       padding: 14, border: isMe ? '2px solid #12a094' : '1px solid #dfece9',
                       borderRadius: 16, background: isMe ? '#eef7f6' : '#fff',
-                      cursor: isMe ? 'default' : 'pointer',
+                      cursor: (isMe || !HISTORY_ENABLED) ? 'default' : 'pointer',
                     }}>
                       <span style={{ flex: '0 0 auto', width: 44, height: 44, borderRadius: '50%', background: '#e6f4f2', color: '#0e756c', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 17, fontFamily: "'Bricolage Grotesque'" }}>
                         {f.initial}
@@ -2351,15 +2370,17 @@ export default function PortalApp() {
                 }}>
                   <HomeIcon /> Today
                 </button>
-                <button onClick={goHistory} style={{
-                  flex: 1, padding: 10, borderRadius: 12, border: 0,
-                  background: view === 'records' ? '#e6f4f2' : 'transparent',
-                  color: view === 'records' ? '#0e756c' : '#8aa8a3',
-                  fontWeight: 700, fontSize: 12, cursor: 'pointer',
-                  display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
-                }}>
-                  <HistoryIcon /> History
-                </button>
+                {HISTORY_ENABLED && (
+                  <button onClick={goHistory} style={{
+                    flex: 1, padding: 10, borderRadius: 12, border: 0,
+                    background: view === 'records' ? '#e6f4f2' : 'transparent',
+                    color: view === 'records' ? '#0e756c' : '#8aa8a3',
+                    fontWeight: 700, fontSize: 12, cursor: 'pointer',
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
+                  }}>
+                    <HistoryIcon /> History
+                  </button>
+                )}
                 <button onClick={goFamily} style={{
                   flex: 1, padding: 10, borderRadius: 12, border: 0,
                   background: view === 'family' ? '#e6f4f2' : 'transparent',

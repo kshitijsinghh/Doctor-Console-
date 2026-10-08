@@ -140,5 +140,40 @@ check('a scoped snapshot response also works', !crashed, crashed && crashed.mess
 check('...and the patient is still there', /Kshitij Singh/.test(text()), text().slice(0, 160));
 check('the page never goes empty', html().length > 500, html().length);
 
+/* ── Visit history, on or off ───────────────────────────────────────────
+   Built twice: once with VITE_PORTAL_HISTORY unset and once with "false".
+   HISTORY_OFF says which build is running, so the same mounted portal is
+   asserted from both sides. */
+
+const HISTORY_OFF = process.env.PORTAL_HISTORY_OFF === '1';
+const tabs = () => [...document.querySelectorAll('nav button')].map((b) => b.textContent.trim());
+
+if (HISTORY_OFF) {
+  check('[history off] the History tab is not offered', !tabs().some((t) => /History/.test(t)), tabs());
+  check('[history off] Today and Family remain', tabs().length === 2, tabs());
+  check('[history off] nothing says "Visit history"', !/Visit history/.test(text()));
+  const fam = [...document.querySelectorAll('nav button')].find((b) => /Family/.test(b.textContent));
+  await act(async () => { fam.click(); });
+  await flush();
+  check('[history off] the Family tab still opens', /Everyone registered on this mobile number/.test(text()), text().slice(0, 200));
+  check('[history off] ...without promising a history page',
+    !/Tap anyone to view their visit history/.test(text()), text().slice(0, 240));
+  // Tapping a member must not route to a view the clinic switched off.
+  const member = [...document.querySelectorAll('button')].find((b) => /Kshitij Singh/.test(b.textContent));
+  if (member) { await act(async () => { member.click(); }); await flush(); }
+  check('[history off] tapping a family member does not open records',
+    !/Visit history/.test(text()), text().slice(0, 200));
+  check('[history off] the portal is still rendering', text().trim().length > 0 && !crashed, crashed && crashed.message);
+} else {
+  check('[history on] the History tab is offered', tabs().some((t) => /History/.test(t)), tabs());
+  check('[history on] all three tabs are there', tabs().length === 3, tabs());
+  const histBtn = [...document.querySelectorAll('nav button')].find((b) => /History/.test(b.textContent));
+  await act(async () => { histBtn.click(); });
+  await flush();
+  check('[history on] it opens the visit history', /Visit history/.test(text()), text().slice(0, 200));
+  check('[history on] showing the patient', /Kshitij Singh/.test(text()), text().slice(0, 160));
+  check('[history on] nothing crashed', !crashed, crashed && crashed.message);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
