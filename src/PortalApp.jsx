@@ -365,7 +365,7 @@ export default function PortalApp() {
   const [myPatientId, setMyPatientId] = useState('');
 
   /* ── registration form ── */
-  const [reg, setReg] = useState({ mobile: '', name: '', age: '', gender: '', address: '' });
+  const [reg, setReg] = useState({ mobile: '', name: '', age: '', gender: '', address: '', email: '' });
   const [regError, setRegError] = useState('');
   const [regPickedId, setRegPickedId] = useState('');
   const [regAddingMember, setRegAddingMember] = useState(false);
@@ -523,7 +523,7 @@ export default function PortalApp() {
     } else {
       setMyPatientId('');
       setView('register');
-      setReg({ mobile: '', name: '', age: '', gender: '', address: '' });
+      setReg({ mobile: '', name: '', age: '', gender: '', address: '', email: '' });
       setRegError('');
       setRegPickedId('');
       setRegAddingMember(false);
@@ -774,7 +774,7 @@ export default function PortalApp() {
     } else {
       setMyPatientId('');
       setView('register');
-      setReg({ mobile, name: '', age: '', gender: '', address: '' });
+      setReg({ mobile, name: '', age: '', gender: '', address: '', email: '' });
       setRegError('');
       setRegPickedId('');
       setRegAddingMember(false);
@@ -846,9 +846,15 @@ export default function PortalApp() {
     // Optional, exactly as it is on the clinic console's intake form.
     const checkinAddress = regPickedId && db.patients[regPickedId]
       ? (db.patients[regPickedId].address || '') : (reg.address || '').trim();
+    // A Google sign-in has already proved an address, so it wins over anything
+    // typed — and the server overrides it to the token's address regardless.
+    // The typed field only has an effect after an OTP sign-in, where nothing
+    // has been proved and the patient is telling us where to reach them.
+    const checkinEmail = authedEmail
+      || (regPickedId && db.patients[regPickedId] ? (db.patients[regPickedId].email || '') : (reg.email || '').trim());
 
     try {
-      const res = await portalCheckin({ mobile, name: checkinName, age: checkinAge, gender: checkinGender, address: checkinAddress, email: authedEmail });
+      const res = await portalCheckin({ mobile, name: checkinName, age: checkinAge, gender: checkinGender, address: checkinAddress, email: checkinEmail });
       applySnapshot(res);
 
       const pid = res.patientId || db.order.find(id => {
@@ -863,7 +869,7 @@ export default function PortalApp() {
         setProblemSaved(false);
         setEditingProblem(false);
       }
-      setReg({ mobile: '', name: '', age: '', gender: '', address: '' });
+      setReg({ mobile: '', name: '', age: '', gender: '', address: '', email: '' });
       setRegPickedId('');
       setRegAddingMember(false);
       setIsAddingForFamily(false);
@@ -1486,7 +1492,7 @@ export default function PortalApp() {
                       setRegAddingMember(false);
                       setRegPickedId('');
                       setRegError('');
-                      setReg(r => ({ ...r, name: '', age: '', gender: '' }));
+                      setReg(r => ({ ...r, name: '', age: '', gender: '', email: '' }));
                     }} style={{ border: '1px solid #cfe0f0', background: '#fff', color: '#3d6fb0', fontWeight: 700, fontSize: '12.5px', borderRadius: 8, padding: '7px 12px', cursor: 'pointer' }}>Cancel</button>
                   </div>
                 )}
@@ -1531,6 +1537,25 @@ export default function PortalApp() {
                         style={{ width: '100%', padding: '13px 14px', border: '1px solid #d6e7e3', borderRadius: 11, fontSize: 16, background: regPickedId ? '#f0f6f5' : '#f7fbfa', fontFamily: 'inherit', resize: 'vertical' }}
                       />
                     </div>
+                    {/* After a Google sign-in the address is already known and
+                        proved, so it is shown rather than asked for. After an
+                        OTP sign-in the box is empty and optional. */}
+                    <div>
+                      <label style={{ display: 'block', fontWeight: 700, fontSize: '13.5px', marginBottom: 7 }}>Email</label>
+                      <input
+                        className="fld" value={authedEmail || reg.email}
+                        onChange={e => setReg(r => ({ ...r, email: e.target.value }))}
+                        type="email" inputMode="email" autoComplete="email"
+                        placeholder="name@example.com (optional)"
+                        readOnly={!!regPickedId || !!authedEmail}
+                        style={{ width: '100%', padding: '13px 14px', border: '1px solid #d6e7e3', borderRadius: 11, fontSize: 16, background: (regPickedId || authedEmail) ? '#f0f6f5' : '#f7fbfa' }}
+                      />
+                      {!!authedEmail && (
+                        <p style={{ margin: '6px 2px 0', fontSize: '12.5px', color: '#8aa8a3' }}>
+                          From the Google account you signed in with.
+                        </p>
+                      )}
+                    </div>
                   </div>
                 )}
 
@@ -1539,7 +1564,7 @@ export default function PortalApp() {
                     setRegAddingMember(true);
                     setRegPickedId('');
                     setRegError('');
-                    setReg(r => ({ ...r, name: '', age: '', gender: '' }));
+                    setReg(r => ({ ...r, name: '', age: '', gender: '', email: '' }));
                   }} style={{ border: 0, background: 'none', color: '#8aa8a3', fontSize: '12.5px', fontWeight: 600, cursor: 'pointer', padding: 0, textAlign: 'left', textDecoration: 'underline', textUnderlineOffset: '2px' }}>
                     None of these? Add a new family member
                   </button>
