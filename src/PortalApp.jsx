@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { fetchList, fetchPatientSnapshot, portalCheckin, savePatientProblem, getDocumentUrl, fetchOrg, generatePrescriptionPdf, generateReceiptPdf } from './api';
 import { signInWithFirebaseToken, signInWithGooglePatientToken, requestPortalOtp, signInWithPortalOtp, hasLiveToken, clearSession as clearPortalSession } from './auth';
 import { getFirebaseAuth, RecaptchaVerifier, signInWithPhoneNumber, signOut as firebaseSignOut } from './firebase';
+import { anyHealthDetails, carryForwardHealth, healthRows, NO_ALLERGY_TEXT, NO_DENTAL_TEXT } from './health';
 
 /* ─── helpers ─── */
 async function renderUrlToPdf(url) {
@@ -251,6 +252,40 @@ export function smsOtpEnabled(env) {
 
 const SMS_OTP_ENABLED = smsOtpEnabled(import.meta.env);
 
+// The four boxes a patient fills in while they wait, as data rather than four
+// near-identical blocks of JSX. The wording is the spec's and is patient-facing,
+// so it is kept together where it can be read as a whole.
+const HX_FIELDS = [
+  {
+    key: 'problem',
+    label: "What's troubling you today?",
+    hint: 'Pain, sensitivity, swelling, bleeding — and since when.',
+    placeholder: 'e.g. Pain in lower left tooth for 3 days',
+  },
+  {
+    key: 'medical',
+    label: 'Medical history',
+    hint: 'Past or current illnesses, and any medicines you take regularly.',
+    placeholder: 'e.g. Diabetes, on Metformin · High BP',
+  },
+  {
+    key: 'allergies',
+    label: 'Allergies',
+    hint: 'Any medicine, food or other allergy (e.g. penicillin, latex).',
+    placeholder: 'e.g. Allergic to penicillin',
+    // The chip writes the exact words the doctor's form tests for, so a
+    // declared "none" is never mistaken for an unanswered question.
+    chip: { label: 'No known allergies', value: NO_ALLERGY_TEXT },
+  },
+  {
+    key: 'dental',
+    label: 'Dental history',
+    hint: 'Any dental treatment you have had before.',
+    placeholder: 'e.g. Root canal in 2022, braces as a child',
+    chip: { label: 'None before', value: NO_DENTAL_TEXT },
+  },
+];
+
 // Extracted so the hidden case can be rendered on its own in a test: the
 // sign-in screen itself sits behind `loading`, which never clears without a
 // browser, so it cannot be reached by renderToString.
@@ -288,9 +323,6 @@ const QrIcon = () => (
 );
 const BackArrow = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5M11 18l-6-6 6-6"/></svg>
-);
-const RefreshIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 4v5h-5"/></svg>
 );
 const CheckIcon = () => (
   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
@@ -419,11 +451,14 @@ export default function PortalApp() {
   const [isAddingForFamily, setIsAddingForFamily] = useState(false);
   const [savingReg, setSavingReg] = useState(false);
 
-  /* ── problem form ── */
-  const [problemDraft, setProblemDraft] = useState('');
-  const [problemSaved, setProblemSaved] = useState(false);
+  /* ── health details form ── */
+  const [hx, setHx] = useState({ problem: '', medical: '', allergies: '', dental: '' });
+  const [hxSaved, setHxSaved] = useState(false);
+  const [hxCarried, setHxCarried] = useState(false);
+  const [hxError, setHxError] = useState('');
   const [editingProblem, setEditingProblem] = useState(false);
   const [savingProblem, setSavingProblem] = useState(false);
+  const setHxField = (k) => (e) => { setHx((h) => ({ ...h, [k]: e.target.value })); setHxError(''); };
 
   /* ── detail sheet ── */
   const [detailVisitId, setDetailVisitId] = useState('');
@@ -519,11 +554,7 @@ export default function PortalApp() {
     const p = (data || db).patients[pid];
     if (p) {
       const t = localToday();
-      const openV = p.visits.filter(v => !v.done && v.date === t).sort((a, b) => (b.no || 0) - (a.no || 0))[0];
-      if (openV && openV.clinical && openV.clinical.patientProblem) {
-        setProblemDraft(openV.clinical.patientProblem);
-        setProblemSaved(true);
-      }
+      syncHealthDrafts(p);
     }
   }
 
@@ -559,14 +590,7 @@ export default function PortalApp() {
       setView('home');
       const p = db.patients[found];
       const t = localToday();
-      const openV = p.visits.filter(v => !v.done && v.date === t).sort((a, b) => (b.no || 0) - (a.no || 0))[0];
-      if (openV && openV.clinical && openV.clinical.patientProblem) {
-        setProblemDraft(openV.clinical.patientProblem);
-        setProblemSaved(true);
-      } else {
-        setProblemDraft('');
-        setProblemSaved(false);
-      }
+      syncHealthDrafts(p);
     } else {
       setMyPatientId('');
       setView('register');
@@ -814,14 +838,7 @@ export default function PortalApp() {
       setView('home');
       const p = db.patients[found];
       const t = localToday();
-      const openV = p.visits.filter(v => !v.done && v.date === t).sort((a, b) => (b.no || 0) - (a.no || 0))[0];
-      if (openV && openV.clinical && openV.clinical.patientProblem) {
-        setProblemDraft(openV.clinical.patientProblem);
-        setProblemSaved(true);
-      } else {
-        setProblemDraft('');
-        setProblemSaved(false);
-      }
+      syncHealthDrafts(p);
     } else {
       setMyPatientId('');
       setView('register');
@@ -846,9 +863,7 @@ export default function PortalApp() {
     setOtpDigits(['', '', '', '', '', '']);
     setMyPatientId('');
     setView('login');
-    setProblemDraft('');
-    setProblemSaved(false);
-    setEditingProblem(false);
+    syncHealthDrafts(null);
     setDetailVisitId('');
     setMemberSheet(false);
     setConfirmWho(false);
@@ -916,9 +931,9 @@ export default function PortalApp() {
       if (pid && res.patients[pid]) {
         setMyPatientId(pid);
         setView('home');
-        setProblemDraft('');
-        setProblemSaved(false);
-        setEditingProblem(false);
+        // From the freshly returned record, so a returning patient sees what
+        // they told us last time rather than four empty boxes.
+        syncHealthDrafts(res.patients[pid]);
       }
       setReg({ mobile: '', name: '', age: '', gender: '', address: '', email: '' });
       setRegPickedId('');
@@ -932,114 +947,75 @@ export default function PortalApp() {
   }
 
   /* ─── problem (what's troubling you) ─── */
-  async function saveProblem() {
-    if (!problemDraft.trim()) return;
-    const me = db.patients[myPatientId];
-    if (!me) return;
+  // Load today's health details into the form, or — for a returning patient
+  // who has not filled anything in yet — what they told us last time.
+  //
+  // Six different paths reach the Today screen (OTP sign-in, Google sign-in,
+  // a restored session, registering, switching family member, signing out),
+  // and each used to repeat this. They are one call now, because a path that
+  // forgot it showed an empty form to a patient whose details were on file.
+  function syncHealthDrafts(patient) {
     const t = localToday();
-    const openV = me.visits.filter(v => !v.done && v.date === t).sort((a, b) => (b.no || 0) - (a.no || 0))[0];
+    const openV = patient
+      ? patient.visits.filter(v => !v.done && v.date === t).sort((a, b) => (b.no || 0) - (a.no || 0))[0]
+      : null;
+    const c = (openV && openV.clinical) || {};
+    const saved = anyHealthDetails(c);
+    // Carried forward only when today is still blank. Once the patient has
+    // sent anything, what they sent is the truth and nothing is filled in
+    // behind them.
+    const carry = (openV && !saved) ? carryForwardHealth(patient.visits, openV.visitId) : {};
+    setHx({
+      // Never carried: what brought them in today is today's question.
+      problem: c.patientProblem || '',
+      medical: c.patientMedicalHistory || carry.patientMedicalHistory || '',
+      allergies: c.patientAllergies || carry.patientAllergies || '',
+      dental: c.patientDentalHistory || carry.patientDentalHistory || '',
+    });
+    setHxSaved(saved);
+    setHxCarried(!saved && !!(carry.patientMedicalHistory || carry.patientAllergies || carry.patientDentalHistory));
+    setHxError('');
+    setEditingProblem(false);
+  }
+
+  async function saveProblem() {
+    const mePat = db.patients[myPatientId];
+    if (!mePat) return;
+    const t = localToday();
+    const openV = mePat.visits.filter(v => !v.done && v.date === t).sort((a, b) => (b.no || 0) - (a.no || 0))[0];
     if (!openV) return;
 
+    const vals = {
+      patientProblem: hx.problem.trim(),
+      patientMedicalHistory: hx.medical.trim(),
+      patientAllergies: hx.allergies.trim(),
+      patientDentalHistory: hx.dental.trim(),
+    };
+    // Every field is optional on its own, but sending nothing at all is
+    // almost always a mis-tap rather than an answer.
+    if (!Object.values(vals).some(Boolean)) {
+      setHxError('Please fill in at least one field before sending.');
+      return;
+    }
+
     setSavingProblem(true);
+    setHxError('');
     try {
-      const res = await savePatientProblem({
-        patientId: myPatientId,
-        visitId: openV.visitId,
-        patientProblem: problemDraft.trim(),
-      });
+      const res = await savePatientProblem({ patientId: myPatientId, visitId: openV.visitId, ...vals });
       applySnapshot(res);
-      setProblemSaved(true);
+      setHx({ problem: vals.patientProblem, medical: vals.patientMedicalHistory,
+        allergies: vals.patientAllergies, dental: vals.patientDentalHistory });
+      setHxSaved(true);
       setEditingProblem(false);
-    } catch {
-      setProblemSaved(true);
-      setEditingProblem(false);
+      setHxCarried(false);
+    } catch (err) {
+      // This used to report success whatever happened. With an allergy in the
+      // form that is not a white lie: the patient would sit down believing the
+      // doctor had been told, and the doctor would never see it.
+      setHxError(errText(err, 'Could not send to the doctor. Please try again.'));
     } finally {
       setSavingProblem(false);
     }
-  }
-
-  /* ─── navigation ─── */
-  function goHome() {
-    setView('home');
-    setDetailVisitId('');
-    setMemberSheet(false);
-  }
-  function goHistory() {
-    setView('records');
-    setDetailVisitId('');
-  }
-  function goFamily() {
-    setView('family');
-    setDetailVisitId('');
-    setMemberSheet(false);
-  }
-  function goRegisterForFamily() {
-    const me = db && db.patients[myPatientId];
-    setView('register');
-    setIsAddingForFamily(true);
-    setRegAddingMember(true);
-    setRegPickedId('');
-    setRegError('');
-    setReg({ mobile: authedMobile || (me ? me.mobile : ''), name: '', age: '', gender: '', address: '' });
-    setMemberSheet(false);
-  }
-
-  /* ─── check in with confirm-who flow ─── */
-  function handleCheckinCta() {
-    if (!me || !db) return;
-    const onMobile = findAllByMobile(db, me.mobile);
-    if (onMobile.length > 1) {
-      setConfirmWho(true);
-    } else {
-      doCheckinForMe();
-    }
-  }
-
-  function doCheckinForMe() {
-    setConfirmWho(false);
-    setView('register');
-    setIsAddingForFamily(false);
-    setRegAddingMember(false);
-    setRegPickedId(myPatientId);
-    setRegError('');
-    setReg({ mobile: authedMobile || me.mobile, name: me.name, age: me.age, gender: me.gender, address: me.address || '' });
-  }
-
-  /* ─── switch to another family member ─── */
-  function switchToMember(pid) {
-    setMyPatientId(pid);
-    setView('home');
-    setMemberSheet(false);
-    setDetailVisitId('');
-    const p = db.patients[pid];
-    if (p) {
-      const t = localToday();
-      const openV = p.visits.filter(v => !v.done && v.date === t).sort((a, b) => (b.no || 0) - (a.no || 0))[0];
-      if (openV && openV.clinical && openV.clinical.patientProblem) {
-        setProblemDraft(openV.clinical.patientProblem);
-        setProblemSaved(true);
-      } else {
-        setProblemDraft('');
-        setProblemSaved(false);
-      }
-      setEditingProblem(false);
-    }
-  }
-  function viewMemberRecords(pid) {
-    setMyPatientId(pid);
-    setView('records');
-    setMemberSheet(false);
-    setDetailVisitId('');
-  }
-
-  /* ─── refresh queue ─── */
-  async function refreshQueue() {
-    setRefreshing(true);
-    try {
-      const res = await loadPortalData();
-      applySnapshot(res);
-    } catch { /* ignore */ }
-    setRefreshing(false);
   }
 
   /* ─── open DOCX-template prescription/receipt ─── */
@@ -1126,54 +1102,9 @@ export default function PortalApp() {
   const me = db && myPatientId ? db.patients[myPatientId] : null;
   const today = localToday();
 
-  // Queue info
-  let queueNo = null;
-  let aheadCount = 0;
-  if (me && db) {
-    const todayVisit = me.visits.find(v => v.date === today);
-    if (todayVisit) {
-      const todayPatientIds = [];
-      for (const pid of db.order) {
-        const p = db.patients[pid];
-        if (p.visits.some(v => v.date === today)) {
-          todayPatientIds.push(pid);
-        }
-      }
-      if (todayVisit.queueNumber) {
-        queueNo = todayVisit.queueNumber;
-        for (const pid of db.order) {
-          if (pid === myPatientId) continue;
-          const p = db.patients[pid];
-          const tv = p.visits.find(v => v.date === today && v.queueNumber && v.queueNumber < queueNo);
-          if (tv && !tv.done) aheadCount++;
-        }
-      } else {
-        let idx = 1;
-        for (const pid of db.order) {
-          const p = db.patients[pid];
-          if (p.visits.some(v => v.date === today)) {
-            if (pid === myPatientId) { queueNo = idx; break; }
-            idx++;
-          }
-        }
-        if (queueNo) {
-          let qi = 0;
-          for (const pid of db.order) {
-            const p = db.patients[pid];
-            const tv = p.visits.find(v => v.date === today);
-            if (tv) {
-              qi++;
-              if (qi < queueNo && !tv.done && pid !== myPatientId) aheadCount++;
-            }
-          }
-        }
-      }
-    }
-  }
-
-  const aheadText = aheadCount === 0 ? "You're next — please be seated."
-    : aheadCount === 1 ? '1 patient ahead of you'
-    : aheadCount + ' patients ahead of you';
+  // The queue number is deliberately not shown. The backend still assigns
+  // one — it is what orders the doctor's list — but a number that only moves
+  // when someone refreshes told patients less than it promised.
 
   // Active visit (today) — find both pending and done
   let activeVisit = null;
@@ -1197,8 +1128,6 @@ export default function PortalApp() {
   const activeHasFiles = activeDocs.length > 0;
   const activeHasAnyDoc = activeHasRx || activeHasReceipt || activeHasFiles;
 
-  // Show queue card only when visit is pending (not done)
-  const showQueueCard = visitPending && queueNo !== null;
   // Checked-in strip only when pending
   const showCheckedIn = visitPending;
   // Done strip only when done
@@ -1647,37 +1576,8 @@ export default function PortalApp() {
                     <BigCheckIcon size={18} />
                   </span>
                   <span style={{ fontSize: 14, color: '#0e3b39', lineHeight: 1.35 }}>
-                    {"You're checked in — your queue number is below."}
+                    {"You're checked in — please be seated. Fill in your health details below while you wait."}
                   </span>
-                </div>
-              )}
-
-              {/* QUEUE CARD (pending only) */}
-              {showQueueCard && (
-                <div style={{ marginTop: 10, borderRadius: 20, background: 'linear-gradient(135deg,#0e756c,#0e3b39)', color: '#fff', padding: 22, position: 'relative', overflow: 'hidden' }}>
-                  <div style={{ position: 'absolute', right: -40, top: -40, width: 150, height: 150, borderRadius: '50%', background: 'rgba(127,212,201,.14)' }} />
-                  <div style={{ position: 'relative' }}>
-                    <span style={{ fontSize: '11.5px', letterSpacing: '.16em', textTransform: 'uppercase', color: '#7fd4c9', fontWeight: 700 }}>Your queue number today</span>
-                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginTop: 6 }}>
-                      <span style={{ fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: 56, lineHeight: 1 }}>{queueNo}</span>
-                      <span style={{ fontSize: 14, color: '#bfe3dd' }}>{fmtDate(today)}</span>
-                    </div>
-                    <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid rgba(255,255,255,.18)', display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <span style={{ width: 9, height: 9, borderRadius: '50%', background: '#7fd4c9', animation: 'pulseDot 1.6s ease-in-out infinite', flexShrink: 0 }} />
-                      <span style={{ flex: 1, fontSize: 15, fontWeight: 600 }}>{aheadText}</span>
-                      <button onClick={refreshQueue} title="Refresh" aria-label="Refresh queue" style={{
-                        flexShrink: 0, width: 34, height: 34, borderRadius: 10,
-                        border: '1px solid rgba(255,255,255,.3)', background: 'rgba(255,255,255,.12)',
-                        color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      }}>
-                        {refreshing ? (
-                          <div style={{ width: 16, height: 16, border: '2px solid rgba(255,255,255,.3)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin .7s linear infinite' }} />
-                        ) : (
-                          <RefreshIcon />
-                        )}
-                      </button>
-                    </div>
-                  </div>
                 </div>
               )}
 
@@ -1713,55 +1613,82 @@ export default function PortalApp() {
                   {/* Awaiting doctor (done=false) */}
                   {!activeVisit.done && (
                     <div style={{ marginTop: 14 }}>
-                      {problemSaved && !editingProblem ? (
+                      {hxSaved && !editingProblem ? (
                         <div>
                           <div style={{ background: '#e6f4f2', border: '1px solid #c9e6e1', borderRadius: 12, padding: '13px 15px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
                               <span style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: '11.5px', fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: '#0e756c' }}>
-                                <CheckIcon /> Sent to the doctor
+                                <CheckIcon /> Health details sent to the doctor
                               </span>
                               <button onClick={() => setEditingProblem(true)} style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 5, border: '1px solid #c9e6e1', background: '#fff', color: '#0e756c', fontWeight: 700, fontSize: 12, borderRadius: 8, padding: '6px 10px', cursor: 'pointer' }}>
                                 <EditIcon /> Edit
                               </button>
                             </div>
-                            <p style={{ fontSize: '14.5px', color: '#0e3b39', marginTop: 8, textWrap: 'pretty' }}>{problemDraft}</p>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 9, marginTop: 10 }}>
+                              {[['Problem', hx.problem], ['Medical history', hx.medical], ['Allergies', hx.allergies], ['Dental history', hx.dental]]
+                                .filter(([, v]) => !!String(v || '').trim())
+                                .map(([k, v]) => (
+                                  <div key={k}>
+                                    <span style={{ display: 'block', fontSize: '11.5px', fontWeight: 700, color: '#5c7a76' }}>{k}</span>
+                                    <span style={{ display: 'block', fontSize: '14.5px', color: '#0e3b39', textWrap: 'pretty' }}>{v}</span>
+                                  </div>
+                                ))}
+                            </div>
                           </div>
                           <p style={{ color: '#98b0ab', fontSize: '12.5px', marginTop: 10, textAlign: 'center' }}>Treatment &amp; payment details will appear here once your consultation is complete.</p>
                         </div>
                       ) : (
-                        <div>
-                          <label style={{ display: 'block', fontWeight: 700, fontSize: '13.5px', marginBottom: 7 }}>
-                            {editingProblem ? 'Edit your message' : "What's troubling you? (optional)"}
-                          </label>
-                          <textarea
-                            value={problemDraft} onChange={e => setProblemDraft(e.target.value)}
-                            placeholder="Describe your problem — pain, sensitivity, swelling, since when..."
-                            style={{ width: '100%', minHeight: 96, padding: '13px 14px', border: '1px solid #d6e7e3', borderRadius: 11, fontSize: '15.5px', background: '#f7fbfa', resize: 'vertical' }}
-                          />
-                          <div style={{ display: 'flex', gap: 9, marginTop: 10 }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                          <div>
+                            <h4 style={{ fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: '15.5px', color: '#0e3b39' }}>Your health details</h4>
+                            <p style={{ fontSize: 13, color: '#5c7a76', marginTop: 2, textWrap: 'pretty' }}>This helps the doctor treat you safely. Fill in what you can — every field is optional.</p>
+                          </div>
+
+                          {hxCarried && (
+                            <div style={{ background: '#fff8e6', border: '1px solid #f1dca6', borderRadius: 11, padding: '10px 12px', fontSize: 13, color: '#6b4b06', textWrap: 'pretty' }}>
+                              We&apos;ve filled in what you told us last time. Please update anything that has changed.
+                            </div>
+                          )}
+
+                          {HX_FIELDS.map(({ key, label, hint, placeholder, chip }) => (
+                            <div key={key}>
+                              <label style={{ display: 'block', fontWeight: 700, fontSize: 14, color: '#0e3b39' }}>{label}</label>
+                              <span style={{ display: 'block', fontSize: '12.5px', color: '#5c7a76', margin: '2px 0 7px' }}>{hint}</span>
+                              <textarea
+                                value={hx[key]} onChange={setHxField(key)} placeholder={placeholder}
+                                style={{ width: '100%', minHeight: 74, padding: '12px 13px', border: '1px solid #d6e7e3', borderRadius: 11, fontSize: '15.5px', background: '#f7fbfa', resize: 'vertical', fontFamily: 'inherit' }}
+                              />
+                              {chip && (
+                                <button
+                                  type="button"
+                                  onClick={() => { setHx((h) => ({ ...h, [key]: chip.value })); setHxError(''); }}
+                                  style={{ marginTop: 7, padding: '6px 12px', borderRadius: 100, border: '1px solid #cfe3df', background: '#fff', color: '#0e756c', fontWeight: 700, fontSize: '12.5px', cursor: 'pointer' }}
+                                >{chip.label}</button>
+                              )}
+                            </div>
+                          ))}
+
+                          {!!hxError && (
+                            <p style={{ color: '#c0392b', fontSize: 13, fontWeight: 600 }}>{hxError}</p>
+                          )}
+
+                          <div style={{ display: 'flex', gap: 9 }}>
                             {editingProblem && (
-                              <button onClick={() => {
-                                setEditingProblem(false);
-                                const openV = me.visits.filter(v => !v.done && v.date === today).sort((a, b) => (b.no || 0) - (a.no || 0))[0];
-                                if (openV && openV.clinical && openV.clinical.patientProblem) {
-                                  setProblemDraft(openV.clinical.patientProblem);
-                                } else {
-                                  setProblemDraft(problemDraft);
-                                }
-                              }} style={{ padding: '13px 18px', borderRadius: 11, border: '1px solid #d6e7e3', background: '#fff', color: '#5c7a76', fontWeight: 700, fontSize: 15, cursor: 'pointer' }}>
-                                Cancel
-                              </button>
+                              <button
+                                onClick={() => syncHealthDrafts(me)}
+                                style={{ padding: '13px 18px', borderRadius: 11, border: '1px solid #d6e7e3', background: '#fff', color: '#5c7a76', fontWeight: 700, fontSize: 15, cursor: 'pointer' }}
+                              >Cancel</button>
                             )}
-                            <button onClick={saveProblem} disabled={savingProblem || !problemDraft.trim()} style={{
+                            <button onClick={saveProblem} disabled={savingProblem} style={{
                               flex: 1, padding: 13, borderRadius: 11, border: 0,
-                              background: (!problemDraft.trim() || savingProblem) ? '#8aa8a3' : '#0e756c',
+                              background: savingProblem ? '#8aa8a3' : '#0e756c',
                               color: '#fff', fontWeight: 700, fontSize: 15,
-                              cursor: (!problemDraft.trim() || savingProblem) ? 'default' : 'pointer',
+                              cursor: savingProblem ? 'default' : 'pointer',
                             }}>
-                              {savingProblem ? 'Saving...' : editingProblem ? 'Save changes' : 'Send to doctor'}
+                              {savingProblem ? 'Saving...' : hxSaved ? 'Save changes' : 'Send to doctor'}
                             </button>
                           </div>
-                          <p style={{ color: '#98b0ab', fontSize: '12.5px', marginTop: 10, textAlign: 'center' }}>Optional — the doctor will see this before your consultation.</p>
+                          <p style={{ color: '#5c7a76', fontSize: '12.5px', textAlign: 'center', marginTop: -6 }}>The doctor will see this before your consultation.</p>
                         </div>
                       )}
                     </div>
@@ -1779,6 +1706,9 @@ export default function PortalApp() {
                       { k: 'Treatment', v: tr || '—' },
                     ];
                     if (c.patientProblem) rows.push({ k: 'What you told us', v: c.patientProblem });
+                    if (c.patientMedicalHistory) rows.push({ k: 'Medical history', v: c.patientMedicalHistory });
+                    if (c.patientAllergies) rows.push({ k: 'Allergies', v: c.patientAllergies });
+                    if (c.patientDentalHistory) rows.push({ k: 'Dental history', v: c.patientDentalHistory });
                     const bal = num(c.balanceDue);
                     return (
                       <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -2087,6 +2017,9 @@ export default function PortalApp() {
               rows.push({ k: 'Treatment group', v: c.treatmentGroup || '—' });
               rows.push({ k: 'Treatment', v: tr || '—' });
               if (c.patientProblem) rows.push({ k: 'What you told us', v: c.patientProblem });
+              if (c.patientMedicalHistory) rows.push({ k: 'Medical history', v: c.patientMedicalHistory });
+              if (c.patientAllergies) rows.push({ k: 'Allergies', v: c.patientAllergies });
+              if (c.patientDentalHistory) rows.push({ k: 'Dental history', v: c.patientDentalHistory });
               rows.push({ k: 'Treatment cost', v: num(c.treatmentCost) ? inr(num(c.treatmentCost)) : '—' });
               rows.push({ k: 'Amount paid', v: num(c.amountPaid) ? inr(num(c.amountPaid)) : '—' });
               rows.push({ k: 'Balance due', v: num(c.balanceDue) ? inr(num(c.balanceDue)) : '—' });
