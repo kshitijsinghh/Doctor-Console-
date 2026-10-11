@@ -2,7 +2,7 @@
 // error, a bad hook order or a missing import throws here — none of which a
 // Vite build or oxlint will tell you about.
 import { renderToString } from 'react-dom/server';
-import { PrescriptionSheet, ReceiptSheet, previewSrc, PatientHealthPanel } from '../src/views/Clinical.jsx';
+import { PrescriptionSheet, ReceiptSheet, previewSrc, PatientHealthPanel, MultiSelect } from '../src/views/Clinical.jsx';
 import { WaProvider } from '../src/whatsapp/WaContext.jsx';
 import { fmtClock, fmtDay, fmtDayOf } from '../src/whatsapp/ui.jsx';
 import { fitTop } from '../src/whatsapp/appointments/EventPopover.jsx';
@@ -247,6 +247,32 @@ check('"true" leaves it on', portalHistoryEnabled({ VITE_PORTAL_HISTORY: 'true' 
 for (const near of ['FALSE', 'False', '0', 'no', 'off', '']) {
   check(`${JSON.stringify(near)} does NOT hide a patient's records`,
     portalHistoryEnabled({ VITE_PORTAL_HISTORY: near }) === true, near);
+}
+
+/* ── The clinical pickers ────────────────────────────────────────────────
+   All four are long enough to be worth typing into rather than scrolling.
+   The search box only renders when `searchable` is passed, so the thing to
+   assert is that it is passed — and that passing it changes nothing else. */
+
+const picker = (props) => renderToString(h(MultiSelect, {
+  value: [], options: ['Pain', 'Sensitivity', 'Swelling'], onChange() {}, ...props }));
+
+check('a closed picker shows no search box', !/Search…/.test(picker({ searchable: true })));
+check('options are listed either way',
+  picker({ searchable: true }).length > 0 && picker({}).length > 0);
+check('a selected value still shows as a chip',
+  /Pain/.test(picker({ value: ['Pain'], searchable: true })), picker({ value: ['Pain'], searchable: true }).slice(0, 200));
+check('searchable does not change what is selected',
+  picker({ value: ['Pain'], searchable: true }).includes('Pain')
+  && picker({ value: ['Pain'] }).includes('Pain'));
+
+// The real assertion: every clinical picker in the form asks for search.
+import { readFileSync } from 'node:fs';
+const clinicalSrc = readFileSync('src/views/Clinical.jsx', 'utf8');
+for (const field of ['chiefComplaint', 'advisedTreatment', 'treatmentGroup', 'treatment']) {
+  const line = clinicalSrc.split('\n').find((l) =>
+    l.includes('<MultiSelect value={cform.' + field + '}'));
+  check(`${field} is a searchable dropdown`, !!line && / searchable/.test(line), line && line.trim().slice(0, 110));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

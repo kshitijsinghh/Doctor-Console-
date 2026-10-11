@@ -167,7 +167,10 @@ function scrollToTop() {
   try { window.scrollTo({ top: 0, behavior: 'auto' }); } catch { window.scrollTo(0, 0); }
 }
 
-function MultiSelect({ value, options, onChange, placeholder, disabled, allowOther, searchable }) {
+// Exported for tests. `searchable` adds a filter box above the options; all
+// four clinical pickers use it, so a long list is typed into rather than
+// scrolled.
+export function MultiSelect({ value, options, onChange, placeholder, disabled, allowOther, searchable }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const arr = Array.isArray(value) ? value : (value ? String(value).split(', ').filter(Boolean) : []);
@@ -1395,7 +1398,7 @@ export default function Clinical({
             </div>
             <div>
               <label style={labelStyle}>Chief complaint</label>
-              <MultiSelect value={cform.chiefComplaint} options={CHIEF_COMPLAINTS} onChange={(v) => onSetField('chiefComplaint', v)} placeholder="Select…" disabled={readOnly} allowOther />
+              <MultiSelect value={cform.chiefComplaint} options={CHIEF_COMPLAINTS} onChange={(v) => onSetField('chiefComplaint', v)} placeholder="Select…" disabled={readOnly} allowOther searchable />
             </div>
             <div>
               <label style={labelStyle}>Description</label>
@@ -1426,7 +1429,7 @@ export default function Clinical({
             </div>
             <div>
               <label style={labelStyle}>Treatment group</label>
-              <MultiSelect value={cform.treatmentGroup} options={TREATMENT_GROUPS} onChange={(v) => onSetField('treatmentGroup', v)} placeholder="Select…" disabled={readOnly} allowOther />
+              <MultiSelect value={cform.treatmentGroup} options={TREATMENT_GROUPS} onChange={(v) => onSetField('treatmentGroup', v)} placeholder="Select…" disabled={readOnly} allowOther searchable />
             </div>
             <div>
               <label style={labelStyle}>Current treatment</label>
