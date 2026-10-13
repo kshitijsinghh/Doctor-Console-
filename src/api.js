@@ -455,6 +455,16 @@ export function setAppointment({ visitId, date, time }) {
   return post({ action: 'setAppointment', visitId, date: date || '', time: time || '', noSnapshot: true });
 }
 
+// Creates a patient and NOTHING else.
+//
+// saveIntake also appends a visit, which is right at reception — the patient
+// is standing there — and wrong when booking an appointment for next week:
+// it would put a visit in the Sheet for a day nobody attended. Needs the
+// matching `createPatient` action in Code.gs.
+export function createPatient({ name, mobile, age, gender, address, email }) {
+  return post({ action: 'createPatient', name, mobile, age, gender, address, email, noSnapshot: true });
+}
+
 // Edits a patient's details without creating a visit. Only the fields passed
 // are changed; the server also refreshes the denormalised copies on the
 // patient's visit rows.

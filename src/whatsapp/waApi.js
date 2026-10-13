@@ -132,6 +132,19 @@ export function upsertAppointment({ patientId, visitId, name, mobile, date, time
   }, { op: 'upsertAppointment' });
 }
 
+// Booked straight from the calendar, with no visit behind it. `visitId` is
+// deliberately absent: the patient has not attended yet, so there is no visit
+// row to point at, and inventing one would put a phantom visit in the Sheet.
+export function bookAppointment({ patientId, name, mobile, date, time, treatment, durationMin }) {
+  return waFetch('/whatsapp/appointments', {
+    method: 'POST',
+    body: JSON.stringify({
+      clinicId: CLINIC_ID, patientId, visitId: null, name, mobile, date, time,
+      treatment: treatment || 'Consultation', durationMin: durationMin || 30,
+    }),
+  }, { op: 'bookAppointment' });
+}
+
 export function rescheduleAppointment({ appointmentId, date, time }) {
   return waFetch('/whatsapp/appointments/' + encodeURIComponent(appointmentId) + '/reschedule', {
     method: 'POST',

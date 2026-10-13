@@ -7,6 +7,8 @@ import { to12h } from '../src/whatsapp/ui.jsx';
 import { WaProvider } from '../src/whatsapp/WaContext.jsx';
 import { fmtClock, fmtDay, fmtDayOf } from '../src/whatsapp/ui.jsx';
 import { fitTop } from '../src/whatsapp/appointments/EventPopover.jsx';
+import BookingPanel, { panelPosition } from '../src/whatsapp/appointments/BookingPanel.jsx';
+import WeekGrid from '../src/whatsapp/appointments/WeekGrid.jsx';
 import { DAY_START_MIN, DAY_END_MIN } from '../src/whatsapp/appointments/WeekGrid.jsx';
 import { docVersionForAttempt } from '../src/whatsapp/DocSend.jsx';
 import { smsOtpEnabled, OtpChannelChooser, portalHistoryEnabled } from '../src/PortalApp.jsx';
@@ -312,6 +314,102 @@ check('to12h refuses an out-of-range hour rather than wrapping it',
   to12h('25:00') === '' && to12h('99:99') === '', [to12h('25:00'), to12h('99:99')]);
 check('to12h refuses a value that is not a time',
   to12h('1899-12-30T05:38:50.000Z') === '', to12h('1899-12-30T05:38:50.000Z'));
+
+/* ── Booking a slot from the calendar ────────────────────────────────────
+   The panel decides what a patient is told and whether a duplicate record
+   gets made, so these assert what reaches the screen rather than the state
+   behind it. */
+
+const PATIENTS = [
+  { patientId: 'P0001', name: 'Kshitij Singh', mobile: '9110968006' },
+  { patientId: 'P0002', name: 'Anita Singh', mobile: '9110968006' },
+  { patientId: 'P0004', name: 'Priya Sharma', mobile: '9000000011', whatsappOff: true },
+];
+const EVENTS = [{ date: '2026-10-15', startMin: 600, endMin: 630, name: 'Rohit Verma' }];
+const baseDraft = {
+  date: '2026-10-15', start: 11 * 60, who: 'existing', q: '', pick: null,
+  name: '', mobile: '', age: '', gender: '', address: '', treatment: '', err: '', pos: null,
+};
+// renderToString puts <!-- --> between adjacent text nodes, which splits an
+// interpolated name out of the sentence around it. Stripped so assertions can
+// read the sentence a person would see.
+const bookPanel = (over) => renderToString(h(BookingPanel, {
+  draft: { ...baseDraft, ...over }, patients: PATIENTS, events: EVENTS,
+  today: '2026-10-15', nowMin: 9 * 60, isPhone: false, saving: false,
+  onChange() {}, onClose() {}, onSave() {},
+})).replace(/<!-- -->/g, '');
+
+check('the panel names itself and the slot',
+  /New appointment/.test(bookPanel({})) && /11:00 AM/.test(bookPanel({})) && /11:30 AM/.test(bookPanel({})),
+  bookPanel({}).slice(0, 200));
+check('both patient modes are offered',
+  /Existing patient/.test(bookPanel({})) && /New patient/.test(bookPanel({})));
+check('the search box is shown before anyone is picked', /Search name or mobile number/.test(bookPanel({})));
+
+check('typing a name lists matches',
+  /Kshitij Singh/.test(bookPanel({ q: 'kshi' })), bookPanel({ q: 'kshi' }).slice(0, 300));
+check('a shared number lists everyone on it',
+  /Kshitij Singh/.test(bookPanel({ q: '9110968006' })) && /Anita Singh/.test(bookPanel({ q: '9110968006' })));
+check('an opted-out patient is flagged in the results',
+  /WhatsApp off/.test(bookPanel({ q: 'Priya' })), bookPanel({ q: 'Priya' }).slice(0, 400));
+check('no match offers to add them instead',
+  /No patient found/.test(bookPanel({ q: 'zzzz' })) && /Add as a new patient/.test(bookPanel({ q: 'zzzz' })));
+
+const picked = bookPanel({ pick: PATIENTS[0] });
+check('a picked patient replaces the search with a card',
+  /Kshitij Singh/.test(picked) && /Change/.test(picked) && !/Search name or mobile/.test(picked));
+check('...and the WhatsApp line promises a confirmation',
+  /will get a WhatsApp confirmation/.test(picked), picked.slice(0, 200));
+check('an opted-out patient is told to be called instead',
+  /has WhatsApp turned off — call to confirm/.test(bookPanel({ pick: PATIENTS[2] })));
+check('...and is NOT promised a confirmation',
+  !/will get a WhatsApp confirmation/.test(bookPanel({ pick: PATIENTS[2] })));
+
+const newMode = bookPanel({ who: 'new' });
+check('the new-patient form asks for the same fields as intake',
+  ['Full name', 'Mobile number', 'Age', 'Gender', 'Address'].every((f) => newMode.includes(f)));
+check('the WhatsApp disclosure is shown', /reply STOP at any time/.test(newMode));
+check('a shared number warns it adds a family member',
+  /already has Kshitij Singh, Anita Singh/.test(bookPanel({ who: 'new', mobile: '9110968006' })),
+  bookPanel({ who: 'new', mobile: '9110968006' }).slice(0, 200));
+check('a duplicate name on that number is called out before saving',
+  /already registered on this number/.test(bookPanel({ who: 'new', mobile: '9110968006', name: 'Anita Singh' })));
+check('a NEW name on that number is not',
+  !/already registered on this number/.test(bookPanel({ who: 'new', mobile: '9110968006', name: 'Baby Singh' })));
+
+check('an overlapping slot warns but does not forbid',
+  /Overlaps with Rohit Verma/.test(bookPanel({ start: 600, pick: PATIENTS[0] }))
+  && /You can still book it/.test(bookPanel({ start: 600, pick: PATIENTS[0] })));
+check('a free slot shows no overlap warning', !/Overlaps with/.test(bookPanel({ start: 780, pick: PATIENTS[0] })));
+check('duration is fixed — no duration control is offered',
+  !/Duration/i.test(bookPanel({})), 'no duration field');
+check('an error passed in is displayed', /pick a later slot/.test(bookPanel({ err: 'That time has already passed — pick a later slot.' })));
+
+/* Where the floating card lands. */
+const vw = 1400, vh = 900;
+check('the card sits to the right of the click when there is room',
+  panelPosition(300, 400, vw, vh).left === 318, panelPosition(300, 400, vw, vh));
+check('...and flips left when there is not',
+  panelPosition(1300, 400, vw, vh).left === 1300 - 400 - 18, panelPosition(1300, 400, vw, vh));
+check('it never starts off the left edge', panelPosition(5, 400, 500, vh).left >= 16);
+check('it never starts above the top', panelPosition(300, 10, vw, vh).top >= 16);
+check('a tall card is lifted so it stays on screen',
+  panelPosition(300, 880, vw, vh).top + panelPosition(300, 880, vw, vh).maxHeight <= vh);
+
+/* The ghost block and the clickable grid. */
+const grid = (props) => renderToString(h(WeekGrid, {
+  days: ['2026-10-15'], eventsByDay: { '2026-10-15': [] }, onOpenEvent() {}, ...props,
+}));
+check('the grid shows a cell cursor when booking is possible',
+  /cursor:cell/.test(grid({ onSlotClick() {} }).replace(/\s/g, '')), 'cursor');
+check('...and not when it is not', !/cursor:cell/.test(grid({}).replace(/\s/g, '')));
+check('a draft paints a ghost block with the name and time',
+  /Kshitij Singh · 11:00 AM–11:30 AM/.test(
+    grid({ onSlotClick() {}, draftDurMin: 30, draft: { date: '2026-10-15', start: 660, label: 'Kshitij Singh · 11:00 AM–11:30 AM' } })));
+check('the ghost is not clickable',
+  /pointer-events:none/.test(grid({ onSlotClick() {}, draft: { date: '2026-10-15', start: 660, label: 'x' } }).replace(/\s/g, '')));
+check('a draft on another day paints nothing here',
+  !/ghostlabel/.test(grid({ onSlotClick() {}, draft: { date: '2026-10-16', start: 660, label: 'ghostlabel' } })));
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

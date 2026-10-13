@@ -7,13 +7,15 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import WeekGrid, { Legend, toEvent } from '../whatsapp/appointments/WeekGrid';
+import BookingPanel, { panelPosition } from '../whatsapp/appointments/BookingPanel';
+import { BOOKING_DUR_MIN, prefillFor, slotFromOffset } from '../whatsapp/appointments/slotMath';
 import EventPopover, { CancelModal } from '../whatsapp/appointments/EventPopover';
 import AppointmentsTable from '../whatsapp/appointments/AppointmentsTable';
 import FailedMessagesBanner from '../whatsapp/FailedMessagesBanner';
 import { apptBucket, firstName } from '../whatsapp/statusModel';
 import { Toast, addDays, fmtDay, fmtMin, parseYmd, to12h, todayYmd, toMinutes } from '../whatsapp/ui';
-import { cancelAppointment, listAppointments, rescheduleAppointment, sendMessage } from '../whatsapp/waApi';
-import { setAppointment } from '../api';
+import { bookAppointment, cancelAppointment, listAppointments, rescheduleAppointment, sendMessage } from '../whatsapp/waApi';
+import { createPatient, setAppointment } from '../api';
 import { useWa } from '../whatsapp/WaContext';
 
 const POLL_MS = 30000;
@@ -46,7 +48,7 @@ function Segmented({ options, value, onChange, small }) {
   );
 }
 
-export default function AppointmentsCalendar({ onOpenVisit }) {
+export default function AppointmentsCalendar({ onOpenVisit, patients }) {
   const wa = useWa();
   const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' ? window.innerWidth < 760 : false);
   const [range, setRange] = useState('week');     // 'day' | 'week'
@@ -60,6 +62,8 @@ export default function AppointmentsCalendar({ onOpenVisit }) {
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState('');
   const [toast, setToast] = useState('');
+  const [draft, setDraft] = useState(null);
+  const [booking, setBooking] = useState(false);
   const toastTimer = useRef(null);
 
   useEffect(() => {
@@ -122,6 +126,75 @@ export default function AppointmentsCalendar({ onOpenVisit }) {
     const t = setInterval(tick, POLL_MS);
     return () => clearInterval(t);
   }, [load]);
+
+
+  /* ─── booking a slot ─── */
+
+  const nowMin = () => { const d = new Date(); return d.getHours() * 60 + d.getMinutes(); };
+
+  function openDraft(date, start, clickX, clickY) {
+    setSel(null);
+    setDraft({
+      date, start, who: 'existing', q: '', pick: null,
+      name: '', mobile: '', age: '', gender: '', address: '', treatment: '', err: '',
+      pos: (isMobile || clickX == null) ? null
+        : panelPosition(clickX, clickY, window.innerWidth, window.innerHeight),
+    });
+  }
+
+  // From the grid: the click's distance down the column is the time.
+  function onSlotClick(date, offsetY, clickX, clickY) {
+    openDraft(date, slotFromOffset(offsetY), clickX, clickY);
+  }
+
+  // From the toolbar: no click position, so the panel centres itself.
+  function openNewDraft() {
+    const { date, start } = prefillFor(anchorDate, todayYmd(), nowMin());
+    setAnchorDate(date);
+    openDraft(date, start, null, null);
+  }
+
+  async function saveDraft(blockingError) {
+    if (blockingError) { setDraft((d) => ({ ...d, err: blockingError })); return; }
+    const d = draft;
+    setBooking(true);
+    try {
+      let patient = d.pick;
+
+      // A new patient is created first and separately: the appointment needs a
+      // patientId, and a half-made booking with no patient record behind it is
+      // worse than one that failed outright.
+      if (d.who === 'new') {
+        const res = await createPatient({
+          name: d.name.trim(), mobile: d.mobile.replace(/\D/g, ''),
+          age: d.age, gender: d.gender, address: d.address.trim(),
+        });
+        patient = {
+          patientId: res.patientId, name: d.name.trim(),
+          mobile: d.mobile.replace(/\D/g, ''), whatsappOff: false,
+        };
+      }
+
+      const booked = await bookAppointment({
+        patientId: patient.patientId, name: patient.name, mobile: patient.mobile,
+        date: d.date, time: fmtMin(d.start), treatment: d.treatment.trim() || 'Consultation',
+        durationMin: BOOKING_DUR_MIN,
+      });
+
+      setDraft(null);
+      await load(true);
+      const off = !!(patient.whatsappOff || wa.isOptedOut(patient.mobile)
+        || (booked && booked.appointment && booked.appointment.whatsappOff));
+      const first = firstName(patient.name);
+      say(off
+        ? 'Booked — ' + first + ' has WhatsApp off, call to confirm'
+        : 'Booked — confirmation sent to ' + first + ' on WhatsApp');
+    } catch (err) {
+      setDraft((dd) => (dd ? { ...dd, err: String((err && err.message) || 'Could not book. Please try again.') } : dd));
+    } finally {
+      setBooking(false);
+    }
+  }
 
   const events = useMemo(() => appts.map((a) => toEvent({
     ...a,
@@ -260,6 +333,17 @@ export default function AppointmentsCalendar({ onOpenVisit }) {
       {/* Toolbar */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
         <button
+          onClick={openNewDraft}
+          style={{
+            ...navBtn, width: 'auto', padding: '0 16px 0 12px', fontSize: 14, fontWeight: 700,
+            border: 0, background: '#0e756c', color: '#fff', display: 'inline-flex',
+            alignItems: 'center', gap: 6, boxShadow: '0 6px 16px -8px rgba(14,59,57,.6)',
+          }}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
+          New
+        </button>
+        <button
           onClick={() => setAnchorDate(todayYmd())}
           style={{ ...navBtn, width: 'auto', padding: '0 14px', fontSize: 13, fontWeight: 700 }}
         >
@@ -346,9 +430,34 @@ export default function AppointmentsCalendar({ onOpenVisit }) {
           onOpenEvent={openEvent}
           onPickDay={effRange === 'week' ? (d) => { setAnchorDate(d); setRange('day'); } : null}
           narrow={isMobile}
+          onSlotClick={onSlotClick}
+          draftDurMin={BOOKING_DUR_MIN}
+          draft={draft ? {
+            date: draft.date,
+            start: draft.start,
+            label: (draft.who === 'existing'
+              ? (draft.pick ? draft.pick.name : 'New appointment')
+              : (draft.name.trim() || 'New patient'))
+              + ' · ' + fmtMin(draft.start) + '–' + fmtMin(draft.start + BOOKING_DUR_MIN),
+          } : null}
         />
       ) : (
         <AppointmentsTable events={inView} onOpenEvent={openEvent} isMobile={isMobile} />
+      )}
+
+      {draft && (
+        <BookingPanel
+          draft={draft}
+          patients={patients || []}
+          events={events}
+          today={todayYmd()}
+          nowMin={nowMin()}
+          isPhone={isMobile}
+          saving={booking}
+          onChange={setDraft}
+          onClose={() => { if (!booking) setDraft(null); }}
+          onSave={saveDraft}
+        />
       )}
 
       {selEvent && (

@@ -16,10 +16,15 @@ import { useIsPhone } from './whatsapp/ui';
 // The old Appointments list and the new calendar are two components, not one
 // component with a flag inside it. A clinic that is not part of the WhatsApp
 // rollout renders exactly the code it rendered yesterday.
-function AppointmentsSwitch({ legacy, onOpenVisit }) {
+function AppointmentsSwitch({ legacy, onOpenVisit, patients }) {
   const wa = useWa();
   if (!wa.ready) return null;
-  return wa.enabled ? <AppointmentsCalendar onOpenVisit={onOpenVisit} /> : <Appointments {...legacy} />;
+  // The console already holds every patient — the clinic snapshot is loaded on
+  // sign-in — so the booking panel searches locally and instantly rather than
+  // asking the server on every keystroke.
+  return wa.enabled
+    ? <AppointmentsCalendar onOpenVisit={onOpenVisit} patients={patients} />
+    : <Appointments {...legacy} />;
 }
 
 // The floating "New Visit" button.
@@ -892,6 +897,7 @@ export default function App({ user, onLogout }) {
         {view === 'appointments' && (
           <AppointmentsSwitch
             onOpenVisit={(pid, visitId) => openVisit(pid, visitId, true)}
+            patients={(db.order || []).map((id) => db.patients[id]).filter(Boolean)}
             legacy={{
               appts, hasAppts: appts.length > 0, noAppts: appts.length === 0,
               apptDate, onSetApptDate: setApptDate,

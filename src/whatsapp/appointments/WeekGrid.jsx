@@ -122,7 +122,25 @@ export function Legend({ counts }) {
   );
 }
 
-export default function WeekGrid({ days, eventsByDay, onOpenEvent, onPickDay, narrow }) {
+// A teal block in the slot being booked, following the panel as the date and
+// time change. Not clickable — it is a preview, not an appointment.
+function GhostBlock({ draft, durMin }) {
+  const top = Math.max(0, (draft.start - DAY_START_MIN) * PX_PER_MIN);
+  const height = Math.max(22, Math.min(durMin * PX_PER_MIN - 2, GRID_H - top));
+  return (
+    <div style={{
+      position: 'absolute', left: 2, right: 2, top, height,
+      background: '#0e756c', color: '#fff', borderRadius: 7, padding: '3px 8px',
+      fontSize: 12, fontWeight: 700, lineHeight: 1.3, zIndex: 5,
+      boxShadow: '0 10px 24px -8px rgba(14,59,57,.55)',
+      pointerEvents: 'none', overflow: 'hidden',
+    }}>
+      {draft.label}
+    </div>
+  );
+}
+
+export default function WeekGrid({ days, eventsByDay, onOpenEvent, onPickDay, narrow, onSlotClick, draft, draftDurMin }) {
   const [now, setNow] = useState(nowMinutes());
   const scroller = useRef(null);
   const today = todayYmd();
@@ -199,11 +217,23 @@ export default function WeekGrid({ days, eventsByDay, onOpenEvent, onPickDay, na
           </div>
 
           {days.map((d) => (
-            <div key={d} style={{
-              flex: 1, minWidth: 0, position: 'relative',
-              borderRight: '1px solid #f3f8f7',
-              background: d === today ? '#fbfefe' : '#fff',
-            }}>
+            <div
+              key={d}
+              // Only a click on the column background starts a booking; a click
+              // that landed on an event bubbles from the button and must open
+              // that event instead.
+              onClick={onSlotClick ? (e) => {
+                if (e.target !== e.currentTarget) return;
+                const r = e.currentTarget.getBoundingClientRect();
+                onSlotClick(d, e.clientY - r.top, e.clientX, e.clientY);
+              } : undefined}
+              style={{
+                flex: 1, minWidth: 0, position: 'relative',
+                borderRight: '1px solid #f3f8f7',
+                background: d === today ? '#fbfefe' : '#fff',
+                cursor: onSlotClick ? 'cell' : 'default',
+              }}
+            >
               {hours.map((m) => (
                 <div key={m} style={{
                   position: 'absolute', left: 0, right: 0, top: (m - DAY_START_MIN) * PX_PER_MIN,
@@ -213,6 +243,7 @@ export default function WeekGrid({ days, eventsByDay, onOpenEvent, onPickDay, na
               {layoutLanes((eventsByDay[d] || []).map((e) => ({ ...e }))).map((ev) => (
                 <EventBlock key={ev.appointmentId} ev={ev} onOpen={onOpenEvent} narrow={narrow} />
               ))}
+              {draft && draft.date === d && <GhostBlock draft={draft} durMin={draftDurMin || 30} />}
               {showNow && d === today && (
                 <div style={{ position: 'absolute', left: 0, right: 0, top: nowTop, zIndex: 3, pointerEvents: 'none' }}>
                   <div style={{ height: 2, background: '#e1443a' }} />
