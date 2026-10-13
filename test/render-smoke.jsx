@@ -14,6 +14,19 @@ import { docVersionForAttempt } from '../src/whatsapp/DocSend.jsx';
 import { smsOtpEnabled, OtpChannelChooser, portalHistoryEnabled } from '../src/PortalApp.jsx';
 import { idempotencyKeyFor } from '../src/whatsapp/waApi.js';
 import { createElement as h } from 'react';
+import DoctorFormSettings from '../src/settings/DoctorFormSettings.jsx';
+import FieldsTab from '../src/settings/FieldsTab.jsx';
+import DropdownsTab from '../src/settings/DropdownsTab.jsx';
+import MedicinesTab from '../src/settings/MedicinesTab.jsx';
+import MedicinePicker from '../src/settings/MedicinePicker.jsx';
+import { defaultConfig, setField, addValue, DROPDOWN_DEFS, toggleValue } from '../src/settings/formConfig.js';
+import Clinical from '../src/views/Clinical.jsx';
+import { FormConfigContext } from '../src/settings/FormConfigContext.jsx';
+
+const smokeMeds = [
+  { id: '1', name: 'Amoxicillin 500mg', unit: 'Capsule', morning: true, afternoon: true, evening: false, night: true, food: 'After Food', duration: '5', remarks: 'Complete the full course' },
+  { id: '2', name: 'Ibuprofen 400mg', unit: 'Tablet', morning: true, afternoon: false, evening: false, night: true, food: 'After Food', duration: '3', remarks: '' },
+];
 
 const rx = {
   dateLabel: '04 Oct 2026', name: 'Kshitij Singh', ageGender: '30 yrs · M',
@@ -410,6 +423,162 @@ check('the ghost is not clickable',
   /pointer-events:none/.test(grid({ onSlotClick() {}, draft: { date: '2026-10-15', start: 660, label: 'x' } }).replace(/\s/g, '')));
 check('a draft on another day paints nothing here',
   !/ghostlabel/.test(grid({ onSlotClick() {}, draft: { date: '2026-10-16', start: 660, label: 'ghostlabel' } })));
+
+
+/* ── Doctor's form settings ─────────────────────────────────────────────
+   The page is new, so every one of these is a first render: a missing import
+   or a temporal-dead-zone slip shows up here and nowhere else. The assertions
+   are about behaviour that would otherwise need clicking to notice. */
+
+const settingsCases = [
+  ['the settings page itself', () => h(DoctorFormSettings, { onBack() {} })],
+  ['fields tab', () => h(FieldsTab, { config: defaultConfig(), onToggle() {} })],
+  ['dropdowns tab', () => h(DropdownsTab, { config: defaultConfig(), onChange() {}, onToast() {} })],
+  ['medicines tab, empty', () => h(MedicinesTab, { config: defaultConfig(), medicines: [], onSave() {}, onDelete() {}, onToast() {} })],
+  ['medicines tab, populated', () => h(MedicinesTab, { config: defaultConfig(), medicines: smokeMeds, onSave() {}, onDelete() {}, onToast() {} })],
+  ['medicine picker', () => h(MedicinePicker, { value: '', medicines: smokeMeds, onChangeText() {}, onPick() {} })],
+];
+for (const [name, make] of settingsCases) {
+  try {
+    const html = renderToString(make());
+    if (!html || html.length < 50) throw new Error('rendered almost nothing');
+    pass++; console.log('  ✓', name);
+  } catch (e) { fail++; console.log('  ✗', name, '—', e.message); }
+}
+
+const strip = (s) => s.replace(/<!-- -->/g, '');
+const fieldsHtml = (cfg) => strip(renderToString(h(FieldsTab, { config: cfg, onToggle() {} })));
+
+check('every field is listed with its label', /Medical history/.test(fieldsHtml(defaultConfig())) && /Lab requirements/.test(fieldsHtml(defaultConfig())));
+// Twice per locked field: once in the pill, once in the toggle's title.
+check('both locked fields are badged Always on',
+  (fieldsHtml(defaultConfig()).match(/Always on/g) || []).length === 4,
+  (fieldsHtml(defaultConfig()).match(/Always on/g) || []).length);
+// All nine clinical fields ship on; Comments is the only one that does not,
+// and it is in the second card.
+check('the on-count is shown per card', /9 of 9 on/.test(fieldsHtml(defaultConfig())), fieldsHtml(defaultConfig()).match(/\d of \d on/g));
+check('...and Comments starts off', /4 of 5 on/.test(fieldsHtml(defaultConfig())));
+check('a locked toggle is marked disabled to assistive tech',
+  (fieldsHtml(defaultConfig()).match(/aria-disabled="true"/g) || []).length === 2);
+
+const noTreatHtml = fieldsHtml(setField(defaultConfig(), 'treatment', false));
+check('turning off current treatment explains why treatment group went',
+  /Hidden because Current treatment is off\./.test(noTreatHtml));
+check('...and its toggle is disabled too',
+  (noTreatHtml.match(/aria-disabled="true"/g) || []).length === 3, (noTreatHtml.match(/aria-disabled="true"/g) || []).length);
+check('...and the count drops by two — the field and its dependant',
+  /7 of 9 on/.test(noTreatHtml), noTreatHtml.match(/\d of \d on/g));
+
+const dropHtml = strip(renderToString(h(DropdownsTab, { config: defaultConfig(), onChange() {}, onToast() {} })));
+check('all 8 lists are offered', ['Chief complaint', 'Treatment group', 'Current treatment', 'Advised treatment', 'Medicine type', 'Lab name', 'Payment mode', 'Document type'].every((l) => dropHtml.includes(l)));
+check('the first list is selected and its values rendered', /General Check-up/.test(dropHtml));
+check('the shown-count is rendered', /shown in the form/.test(dropHtml));
+check('the selected list shows its help line', /multi-select in the doctor/.test(dropHtml), (dropHtml.match(/Shown as[^<]*/) || [])[0]);
+check('lab name tells the doctor the Sheet list still applies until they add values',
+  /Google Sheet/.test(DROPDOWN_DEFS.find((d) => d.k === 'labName').help));
+
+const customCfg = addValue(defaultConfig(), 'chiefComplaint', 'Night Sweats').config;
+const customHtml = strip(renderToString(h(DropdownsTab, { config: customCfg, onChange() {}, onToast() {} })));
+check('a value the doctor added is badged Yours', /Yours/.test(customHtml));
+check('...and the built-ins are not', (customHtml.match(/Yours/g) || []).length === 1);
+
+const medsHtml = strip(renderToString(h(MedicinesTab, { config: defaultConfig(), medicines: smokeMeds, onSave() {}, onDelete() {}, onToast() {} })));
+check('each medicine shows its type badge', /CAP/.test(medsHtml) && /TAB/.test(medsHtml));
+check('...and its summary line', /Capsule · M-A-N \(Morning, Afternoon, Night\) · After Food · 5 days/.test(medsHtml), (medsHtml.match(/M-A-N[^<]*/) || [])[0]);
+check('...and its instructions', /Complete the full course/.test(medsHtml));
+check('the saved count is shown', /2 saved/.test(medsHtml));
+check('the preview panel is present', /Preview · in the doctor/.test(medsHtml));
+const emptyMedsHtml = strip(renderToString(h(MedicinesTab, { config: defaultConfig(), medicines: [], onSave() {}, onDelete() {}, onToast() {} })));
+check('an empty library explains what to do', /No medicines yet/.test(emptyMedsHtml));
+
+/* ── The doctor's form, rendered against a configuration ─────────────────
+   Server rendering only ever reaches step 1: `step` is internal state, and a
+   closed MultiSelect renders no options. Step 2, the dropdown option lists and
+   the medicine autocomplete are covered by test/clinical-fields.test.jsx,
+   which mounts the form in a DOM and clicks through it. What is worth checking
+   here is that the form renders AT ALL under each configuration — a mis-nested
+   JSX guard throws on first render, and the build will not tell you. */
+
+const clinicalProps = {
+  cur: { visitId: 'P0001_9', name: 'Kshitij Singh', mobile: '9110968006', date: '2026-10-13' },
+  hasHistory: false,
+  cform: {
+    chiefComplaint: [], treatment: [], advisedTreatment: [], treatmentGroup: [],
+    medicines: [{ name: '', unit: 'Tablet', morning: true, afternoon: false, evening: false, night: true, food: 'After Food', duration: '', remarks: '' }],
+    treatmentTeeth: {}, advisedTeeth: {}, paySplits: [], documents: [],
+    treatmentStage: '', nextAppointment: '', labName: '', comments: '',
+  },
+  onSetField() {}, prevPending: 0, prevPendingLabel: '₹0',
+  amountToCollect: 0, amountToCollectLabel: '₹0',
+  computedBalance: 0, computedBalanceLabel: '₹0', balanceColor: '#12805a',
+  hasPending: false, noPending: true, pendingTotalLabel: '₹0', pendingList: [],
+  hasQr: false, noQr: true, qrUrl: '', qrUploadLabel: 'Upload scanner',
+  onUploadQr() {}, showQr: false, onOpenQr() {}, onCloseQr() {},
+  savedFlash: false, onGoBack() {}, onSaveClinical() {}, onSaveAndNext() {}, saving: false,
+  error: '', apptCountText: '', showApptCount: false,
+  db: { patients: {}, order: [] }, curPatientId: 'P0001',
+  labNames: ['DentCare Lab'], readOnly: false, onCreateNewVisit() {},
+  clinicName: 'Example Dental', clinicAddress: 'X', doctorName: 'Mehta', doctorQualification: 'BDS',
+  rxTemplateUrl: null, hasDocxTemplate: false, hasReceiptTemplate: false, onPaymentSaved() {},
+};
+
+function clinicalHtml(config, medicines = []) {
+  return strip(renderToString(
+    h(WaProvider, { org: { waEnabled: false }, orgLoaded: true },
+      h(FormConfigContext.Provider, { value: { config, medicines, loaded: true, reload() {} } },
+        h(Clinical, clinicalProps)))));
+}
+
+let baseHtml = '';
+try {
+  baseHtml = clinicalHtml(defaultConfig());
+  pass++; console.log('  ✓', "the doctor's form renders with the default configuration");
+} catch (e) { fail++; console.log('  ✗', "the doctor's form renders with the default configuration —", e.message); }
+
+const step1Fields = ['Medical history', 'Chief complaint', 'Description', 'Diagnosis',
+  'Advised treatment', 'Investigation', 'Treatment group', 'Current treatment', 'Prescribed medicine'];
+check('every default-on step 1 field is present',
+  step1Fields.every((l) => baseHtml.includes(l)), step1Fields.filter((l) => !baseHtml.includes(l)));
+
+// Each step 1 field, switched off on its own, disappears and takes nothing
+// else with it. The marker is a placeholder or label unique to that field.
+const offCases = [
+  ['medicalHistory', 'Diabetes, hypertension'],
+  ['description', 'Notes on the chief complaint'],
+  ['diagnosis', 'Clinical diagnosis'],
+  ['investigation', 'X-ray, IOPA, OPG'],
+  ['advised', 'per advised treatment'],
+  ['medicine', 'Prescribed medicine'],
+];
+for (const [key, marker] of offCases) {
+  let html = '';
+  try { html = clinicalHtml(setField(defaultConfig(), key, false)); }
+  catch (e) { fail++; console.log('  ✗', 'form renders with ' + key + ' off —', e.message); continue; }
+  check('switching off ' + key + ' removes it', !html.includes(marker), marker);
+  check('...and Chief complaint, which cannot be switched off, survives', html.includes('Chief complaint'));
+}
+
+const noTreatForm = clinicalHtml(setField(defaultConfig(), 'treatment', false));
+check('switching off Current treatment removes it', !noTreatForm.includes('per treatment</span>'));
+check('...and takes Treatment group with it, as the dependency says', !noTreatForm.includes('Treatment group'));
+check('...but leaves Advised treatment alone', noTreatForm.includes('Advised treatment'));
+
+// Every optional field off at once is the worst case for mismatched fragments.
+let allOff = defaultConfig();
+['medicalHistory', 'description', 'diagnosis', 'advised', 'investigation', 'treatment', 'medicine', 'followUp', 'lab', 'documents']
+  .forEach((k) => { allOff = setField(allOff, k, false); });
+try {
+  const bare = clinicalHtml(allOff);
+  check('with every optional field off, the form still renders its locked field', bare.includes('Chief complaint'));
+  check('...and nothing else', !step1Fields.filter((l) => l !== 'Chief complaint' && l !== 'Description').some((l) => bare.includes(l)),
+    step1Fields.filter((l) => l !== 'Chief complaint' && l !== 'Description').filter((l) => bare.includes(l)));
+} catch (e) { fail++; console.log('  ✗', 'form renders with everything off —', e.message); }
+
+// Whether a hidden value is still OFFERED cannot be seen here: a closed
+// MultiSelect renders no options at all, and it draws selected values as chips
+// regardless of the option list, so any assertion would pass either way. That
+// one is in test/clinical-fields.test.jsx, against the native lab-name select.
+
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

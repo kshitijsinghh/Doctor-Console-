@@ -9,6 +9,9 @@ import { DocPopupHeader, PhoneActionBar, SendStrip, useDocSend } from '../whatsa
 import NextAppointmentNotice from '../whatsapp/NextAppointmentNotice';
 import { useIsPhone, toMinutes } from '../whatsapp/ui';
 import { anyHealthDetails, hasRealAllergy, healthRows } from '../health';
+import { useFormConfig } from '../settings/FormConfigContext';
+import { fieldOn, valuesForVisit, enabledValues, medToRow } from '../settings/formConfig';
+import MedicinePicker from '../settings/MedicinePicker';
 
 // Rasterize a server-generated HTML document (fetched from its URL) into a jsPDF instance.
 async function renderUrlToPdf(url) {
@@ -1120,6 +1123,15 @@ export default function Clinical({
   const [uploadsInFlight, setUploadsInFlight] = useState(0);
   const uploadBusy = uploadsInFlight > 0;
 
+  // What the clinic has configured. Defaults to today's form when nothing is
+  // configured or the settings call failed, so this is never the reason a
+  // doctor cannot record a visit.
+  const { config: formCfg, medicines: medLibrary } = useFormConfig();
+  const showField = (k) => fieldOn(formCfg, k);
+  // Old visits keep their values: a treatment recorded before it was hidden is
+  // still offered while that visit is open, so opening it cannot blank the field.
+  const optsFor = (key, current) => valuesForVisit(formCfg, key, current);
+
   const medicines = cform.medicines || [];
   const paySplits = cform.paySplits || [];
   const documents = cform.documents || [];
@@ -1145,6 +1157,12 @@ export default function Clinical({
   function setMed(i, key, val) {
     const v = key === 'name' ? titleCase(val) : val;
     onSetField('medicines', medicines.map((m, x) => x === i ? { ...m, [key]: v } : m));
+  }
+  // One update for the whole row. Calling setMed seven times would have each
+  // call build from `medicines` as it was before the pick, so only the last
+  // field would survive.
+  function setMedFields(i, patch) {
+    onSetField('medicines', medicines.map((m, x) => x === i ? { ...m, ...patch } : m));
   }
 
   /* ── Split handlers ── */
@@ -1403,27 +1421,27 @@ export default function Clinical({
           <PatientHealthPanel cform={cform} />
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 16 }}>
-            <div style={{ gridColumn: '1 / -1' }}>
+            {showField('medicalHistory') && <div style={{ gridColumn: '1 / -1' }}>
               <label style={labelStyle}>Medical history</label>
               <textarea value={cform.medicalHistory || ''} onChange={(e) => onSetField('medicalHistory', e.target.value)} placeholder="Diabetes, hypertension, allergies, medication…" style={{ ...fieldStyle, minHeight: 68, resize: 'vertical', ...(readOnly ? roStyle : {}) }} disabled={readOnly} />
-            </div>
+            </div>}
             <div>
               <label style={labelStyle}>Chief complaint</label>
-              <MultiSelect value={cform.chiefComplaint} options={CHIEF_COMPLAINTS} onChange={(v) => onSetField('chiefComplaint', v)} placeholder="Select…" disabled={readOnly} allowOther searchable />
+              <MultiSelect value={cform.chiefComplaint} options={optsFor('chiefComplaint', cform.chiefComplaint)} onChange={(v) => onSetField('chiefComplaint', v)} placeholder="Select…" disabled={readOnly} allowOther searchable />
             </div>
-            <div>
+            {showField('description') && <div>
               <label style={labelStyle}>Description</label>
               <input className="fld" value={cform.chiefDescription || ''} onChange={(e) => onSetField('chiefDescription', e.target.value)} placeholder="Notes on the chief complaint" style={{ ...fieldStyle, ...(readOnly ? roStyle : {}) }} disabled={readOnly} />
-            </div>
-            <div style={{ gridColumn: '1 / -1' }}>
+            </div>}
+            {showField('diagnosis') && <div style={{ gridColumn: '1 / -1' }}>
               <label style={labelStyle}>Diagnosis</label>
               <input className="fld" value={cform.diagnosis || ''} onChange={(e) => onSetField('diagnosis', e.target.value)} placeholder="Clinical diagnosis" style={{ ...fieldStyle, ...(readOnly ? roStyle : {}) }} disabled={readOnly} />
-            </div>
-            <div>
+            </div>}
+            {showField('advised') && <div>
               <label style={labelStyle}>Advised treatment</label>
-              <MultiSelect value={cform.advisedTreatment} options={TREATMENTS} onChange={(v) => onSetField('advisedTreatment', v)} placeholder="Select…" disabled={readOnly} allowOther searchable />
-            </div>
-            <div style={{ gridColumn: '1 / -1' }}>
+              <MultiSelect value={cform.advisedTreatment} options={optsFor('advised', cform.advisedTreatment)} onChange={(v) => onSetField('advisedTreatment', v)} placeholder="Select…" disabled={readOnly} allowOther searchable />
+            </div>}
+            {showField('advised') && <div style={{ gridColumn: '1 / -1' }}>
               <label style={{ ...labelStyle, marginBottom: 4 }}>Tooth number <span style={{ color: '#98b0ab', fontWeight: 400 }}>— per advised treatment</span></label>
               <ToothTagBlock
                 cform={cform}
@@ -1433,29 +1451,29 @@ export default function Clinical({
                 onChange={(next) => onSetField('advisedTeeth', next)}
                 readOnly={readOnly}
               />
-            </div>
-            <div style={{ gridColumn: '1 / -1' }}>
+            </div>}
+            {showField('investigation') && <div style={{ gridColumn: '1 / -1' }}>
               <label style={labelStyle}>Investigation</label>
               <input className="fld" value={cform.investigation || ''} onChange={(e) => onSetField('investigation', e.target.value)} placeholder="X-ray, IOPA, OPG, pulp test…" style={{ ...fieldStyle, ...(readOnly ? roStyle : {}) }} disabled={readOnly} />
-            </div>
-            <div>
+            </div>}
+            {showField('treatmentGroup') && <div>
               <label style={labelStyle}>Treatment group</label>
-              <MultiSelect value={cform.treatmentGroup} options={TREATMENT_GROUPS} onChange={(v) => onSetField('treatmentGroup', v)} placeholder="Select…" disabled={readOnly} allowOther searchable />
-            </div>
-            <div>
+              <MultiSelect value={cform.treatmentGroup} options={optsFor('treatmentGroup', cform.treatmentGroup)} onChange={(v) => onSetField('treatmentGroup', v)} placeholder="Select…" disabled={readOnly} allowOther searchable />
+            </div>}
+            {showField('treatment') && <div>
               <label style={labelStyle}>Current treatment</label>
               {/* toothNumber is derived from the selected treatments, so it must be
                   recomputed when a treatment is added or removed, not only when a
                   tooth is tagged. */}
-              <MultiSelect value={cform.treatment} options={TREATMENTS} onChange={(v) => { onSetField('treatment', v); onSetField('toothNumber', deriveToothNumber(v, cform.treatmentTeeth)); }} placeholder="Select…" disabled={readOnly} allowOther searchable />
-            </div>
-            {(Array.isArray(cform.treatment) ? cform.treatment : []).some(t => /Other/.test(t)) && (
+              <MultiSelect value={cform.treatment} options={optsFor('treatment', cform.treatment)} onChange={(v) => { onSetField('treatment', v); onSetField('toothNumber', deriveToothNumber(v, cform.treatmentTeeth)); }} placeholder="Select…" disabled={readOnly} allowOther searchable />
+            </div>}
+            {showField('treatment') && (Array.isArray(cform.treatment) ? cform.treatment : []).some(t => /Other/.test(t)) && (
               <div style={{ gridColumn: '1 / -1' }}>
                 <label style={labelStyle}>Treatment — other (specify)</label>
                 <input className="fld" value={cform.treatmentOther || ''} onChange={(e) => onSetField('treatmentOther', e.target.value)} placeholder="Type the treatment" style={{ ...fieldStyle, ...(readOnly ? roStyle : {}) }} disabled={readOnly} />
               </div>
             )}
-            <div style={{ gridColumn: '1 / -1' }}>
+            {showField('treatment') && <div style={{ gridColumn: '1 / -1' }}>
               <label style={{ ...labelStyle, marginBottom: 4 }}>Tooth number <span style={{ color: '#98b0ab', fontWeight: 400 }}>— per treatment</span></label>
               <ToothTagBlock
                 cform={cform}
@@ -1468,11 +1486,11 @@ export default function Clinical({
                 }}
                 readOnly={readOnly}
               />
-            </div>
+            </div>}
           </div>
 
           {/* ── Prescribed medicine ── */}
-          {!readOnly && (
+          {showField('medicine') && !readOnly && (
             <>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, margin: '24px 0 12px' }}>
                 <h3 style={h3Style}>Prescribed medicine</h3>
@@ -1491,12 +1509,28 @@ export default function Clinical({
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: 12 }}>
                         <div style={{ gridColumn: '1 / -1' }}>
                           <label style={{ display: 'block', fontWeight: 700, fontSize: 12.5, marginBottom: 6 }}>Medicine name</label>
-                          <input className="fld" value={m.name} onChange={(e) => setMed(i, 'name', e.target.value)} placeholder="e.g. Amoxicillin 500mg" style={{ width: '100%', padding: '11px 13px', border: '1px solid #d6e7e3', borderRadius: 10, fontSize: 14.5, background: '#fff' }} />
+                          {/* Picking from the library fills the rest of this row. Every
+                              value stays editable afterwards, and nothing is written back
+                              to the library — the prescription prints this row, not the
+                              record it was seeded from. */}
+                          <MedicinePicker
+                            value={m.name}
+                            medicines={medLibrary}
+                            placeholder="e.g. Amoxicillin 500mg"
+                            onChangeText={(t) => setMed(i, 'name', t)}
+                            onPick={(lib) => setMedFields(i, medToRow(lib))}
+                            // The name is already what was typed, so this only
+                            // dismisses the suggestions. It earns its place by
+                            // saying so: without it a doctor prescribing
+                            // something not in their list is left looking at a
+                            // dropdown that seems to be waiting for a choice.
+                            onUseTyped={() => {}}
+                          />
                         </div>
                         <div>
                           <label style={{ display: 'block', fontWeight: 700, fontSize: 12.5, marginBottom: 6 }}>Form</label>
                           <select value={m.unit} onChange={(e) => setMed(i, 'unit', e.target.value)} style={{ width: '100%', padding: '11px 13px', border: '1px solid #d6e7e3', borderRadius: 10, fontSize: 14.5, background: '#fff' }}>
-                            {MEDICINE_FORMS.map((u) => <option key={u} value={u}>{u}</option>)}
+                            {optsFor('medType', m.unit).map((u) => <option key={u} value={u}>{u}</option>)}
                           </select>
                         </div>
                         <div>
@@ -1661,8 +1695,9 @@ export default function Clinical({
           </div>
 
           {/* Follow-up */}
-          <h3 style={{ ...h3Style, margin: '24px 0 16px' }}>Follow-up</h3>
+          {showField('followUp') && <h3 style={{ ...h3Style, margin: '24px 0 16px' }}>Follow-up</h3>}
           <div style={{ display: 'grid', gridTemplateColumns: FLUID_GRID_2COL, gap: 16 }}>
+            {showField('followUp') && <>
             <div>
               <label style={labelStyle}>Treatment stage</label>
               <select value={cform.treatmentStage} onChange={(e) => onSetField('treatmentStage', e.target.value)} style={fieldStyle}>
@@ -1704,13 +1739,15 @@ export default function Clinical({
                 </div>
               </>
             )}
-            <div style={{ gridColumn: '1 / -1' }}>
+            </>}
+            {showField('comments') && <div style={{ gridColumn: '1 / -1' }}>
               <label style={labelStyle}>Comments</label>
               <textarea value={cform.comments || ''} onChange={(e) => onSetField('comments', e.target.value)} placeholder="Any notes for this visit…" style={{ ...fieldStyle, minHeight: 84, resize: 'vertical' }} />
-            </div>
+            </div>}
           </div>
 
           {/* Lab Requirements accordion */}
+          {showField('lab') && <>
           <div style={{ marginTop: 24, border: '1px solid #e2efec', borderRadius: 14, overflow: 'hidden' }}>
             <button onClick={() => setLabOpen((o) => !o)} style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '14px 16px', background: '#f7fbfa', cursor: 'pointer', border: 0, textAlign: 'left' }}>
               <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -1727,7 +1764,9 @@ export default function Clinical({
                   <label style={labelStyle}>Lab name</label>
                   <select value={cform.labName} onChange={(e) => onSetField('labName', e.target.value)} style={fieldStyle}>
                     <option value="">Select…</option>
-                    {(labNames || []).map((ln) => <option key={ln} value={ln}>{ln}</option>)}
+                    {(enabledValues(formCfg, 'labName').length
+                    ? valuesForVisit(formCfg, 'labName', cform.labName)
+                    : (labNames || [])).map((ln) => <option key={ln} value={ln}>{ln}</option>)}
                   </select>
                 </div>
                 <div>
@@ -1745,7 +1784,9 @@ export default function Clinical({
             )}
           </div>
 
+          </>}
           {/* Documents */}
+          {showField('documents') && <>
           <h3 style={{ ...h3Style, margin: '24px 0 6px' }}>Documents</h3>
           <p style={{ fontSize: 13, color: '#98b0ab', marginBottom: 12 }}>Attach X-rays, prescriptions or medical reports for this visit.</p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -1806,6 +1847,7 @@ export default function Clinical({
               ))}
             </div>
           )}
+          </>}
         </div>
       )}
 

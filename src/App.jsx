@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import Header from './components/Header';
+import DoctorFormSettings from './settings/DoctorFormSettings';
+import { FormConfigProvider } from './settings/FormConfigContext';
 import Dashboard from './views/Dashboard';
 import Intake from './views/Intake';
 import Clinical from './views/Clinical';
@@ -354,6 +356,10 @@ export default function App({ user, onLogout }) {
   }
   function goBack() {
     window.history.back();
+  }
+
+  function goSettings() {
+    pushView('settings');
   }
 
   function goDash() {
@@ -877,8 +883,9 @@ export default function App({ user, onLogout }) {
 
   return (
     <WaProvider org={org} orgLoaded={orgLoaded}>
+    <FormConfigProvider>
     <div style={{ minHeight: '100vh' }}>
-      <Header view={view} onGoDash={goDash} onGoAppts={goAppts} onGoPatients={goPatients} onGoMessages={goMessages} user={user} onLogout={onLogout} />
+      <Header view={view} onGoDash={goDash} onGoAppts={goAppts} onGoPatients={goPatients} onGoMessages={goMessages} onGoSettings={goSettings} user={user} onLogout={onLogout} />
       <main style={{ maxWidth: 1180, margin: '0 auto', padding: '26px 22px 60px' }}>
         {loadError && (
           <p style={{ color: '#c0392b', fontSize: 13, fontWeight: 600, marginBottom: 12 }}>{loadError}</p>
@@ -909,6 +916,8 @@ export default function App({ user, onLogout }) {
         )}
 
         {view === 'messages' && <Messages />}
+
+        {view === 'settings' && <DoctorFormSettings onBack={goBack} />}
 
         {view === 'patients' && (
           <Patients
@@ -996,6 +1005,7 @@ export default function App({ user, onLogout }) {
         </div>
       )}
     </div>
+    </FormConfigProvider>
     </WaProvider>
   );
 }

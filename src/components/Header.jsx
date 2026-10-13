@@ -5,7 +5,7 @@ import { useWa } from '../whatsapp/WaContext';
 
 const MESSAGES_MIN_WIDTH = 900;
 
-export default function Header({ view, onGoDash, onGoAppts, onGoPatients, onGoMessages, user, onLogout }) {
+export default function Header({ view, onGoDash, onGoAppts, onGoPatients, onGoMessages, onGoSettings, user, onLogout }) {
   const [isMobile, setIsMobile] = useState(window.innerWidth < 760);
   const [wide, setWide] = useState(window.innerWidth >= MESSAGES_MIN_WIDTH);
   const [accountOpen, setAccountOpen] = useState(false);
@@ -30,6 +30,24 @@ export default function Header({ view, onGoDash, onGoAppts, onGoPatients, onGoMe
   const userInitial = user ? (user.name || user.email || '?')[0].toUpperCase() : '?';
   const hasPicture = user && user.picture;
   const isPatView = view === 'patients' || view === 'patientDetail';
+
+  const gearBtn = (size) => (
+    <button
+      onClick={onGoSettings}
+      aria-label="Doctor's form settings"
+      title="Doctor's form settings"
+      style={{
+        ...TOUCH_BTN, width: size, height: size, flexShrink: 0, borderRadius: 9,
+        border: 0, padding: 0, cursor: 'pointer',
+        background: view === 'settings' ? '#12a094' : 'rgba(255,255,255,.12)',
+      }}
+    >
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="3" />
+        <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" />
+      </svg>
+    </button>
+  );
 
   const avatarBtn = (size, ml) => (
     <button
@@ -92,6 +110,7 @@ export default function Header({ view, onGoDash, onGoAppts, onGoPatients, onGoMe
               · JD Dental
             </span>
           </div>
+          {!!onGoSettings && gearBtn(34)}
           {avatarBtn(34)}
         </div>
         <div style={{ display: 'flex', gap: 6, padding: '0 14px 10px' }}>
@@ -160,6 +179,7 @@ export default function Header({ view, onGoDash, onGoAppts, onGoPatients, onGoMe
               Messages
             </button>
           )}
+          {!!onGoSettings && gearBtn(36)}
           {avatarBtn(36, 4)}
           {accountOpen && signOutBtn}
         </nav>

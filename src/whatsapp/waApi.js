@@ -25,7 +25,10 @@ export function waConfigured() {
   return !!(AWS_URL && CLINIC_ID);
 }
 
-async function waFetch(path, opts, ctx) {
+// Exported so the settings API can reuse it. It is the one place that knows
+// how to reach the AWS API: the token, the timeout, the slow-request logging
+// and the error copy. A second copy of that would drift.
+export async function waFetch(path, opts, ctx) {
   if (!waConfigured()) throw new Error('WhatsApp is not configured for this clinic.');
 
   // Sending the request anyway produces a bare 403 from the gateway, which
