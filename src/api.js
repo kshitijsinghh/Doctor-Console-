@@ -465,6 +465,20 @@ export function createPatient({ name, mobile, age, gender, address, email }) {
   return post({ action: 'createPatient', name, mobile, age, gender, address, email, noSnapshot: true });
 }
 
+// The Google Calendar event for an appointment booked without a visit.
+//
+// A visit-based appointment syncs its event through setAppointment, which
+// finds the event id on the Visits row. One booked from the calendar has no
+// such row, so Apps Script keeps the id in its own ApptEvents sheet and this
+// is how it is reached. An empty date cancels: the event is deleted.
+export function syncApptCalendar({ appointmentId, name, date, time, treatment }) {
+  return post({
+    action: 'apptCalendar', appointmentId, name,
+    date: date || '', time: time || '', treatment: treatment || '',
+    noSnapshot: true,
+  });
+}
+
 // Edits a patient's details without creating a visit. Only the fields passed
 // are changed; the server also refreshes the denormalised copies on the
 // patient's visit rows.

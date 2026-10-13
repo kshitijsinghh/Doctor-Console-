@@ -15,7 +15,7 @@ import FailedMessagesBanner from '../whatsapp/FailedMessagesBanner';
 import { apptBucket, firstName } from '../whatsapp/statusModel';
 import { Toast, addDays, fmtDay, fmtMin, parseYmd, to12h, todayYmd, toMinutes } from '../whatsapp/ui';
 import { bookAppointment, cancelAppointment, listAppointments, rescheduleAppointment, sendMessage } from '../whatsapp/waApi';
-import { createPatient, setAppointment } from '../api';
+import { createPatient, setAppointment, syncApptCalendar } from '../api';
 import { useWa } from '../whatsapp/WaContext';
 
 const POLL_MS = 30000;
@@ -181,14 +181,30 @@ export default function AppointmentsCalendar({ onOpenVisit, patients }) {
         durationMin: BOOKING_DUR_MIN,
       });
 
+      // After the appointment exists, so the event is only created for a
+      // booking that actually saved.
+      let calNote = '';
+      const newId = booked && (booked.appointmentId || (booked.appointment && booked.appointment.appointmentId));
+      if (newId) {
+        try {
+          const c = await syncApptCalendar({
+            appointmentId: newId, name: patient.name, date: d.date,
+            time: fmtMin(d.start), treatment: d.treatment.trim() || 'Consultation',
+          });
+          if (c && c.calendarError) calNote = ' Google Calendar was not updated — check it.';
+        } catch {
+          calNote = ' Google Calendar was not updated — check it.';
+        }
+      }
+
       setDraft(null);
       await load(true);
       const off = !!(patient.whatsappOff || wa.isOptedOut(patient.mobile)
         || (booked && booked.appointment && booked.appointment.whatsappOff));
       const first = firstName(patient.name);
-      say(off
+      say((off
         ? 'Booked — ' + first + ' has WhatsApp off, call to confirm'
-        : 'Booked — confirmation sent to ' + first + ' on WhatsApp');
+        : 'Booked — confirmation sent to ' + first + ' on WhatsApp') + calNote);
     } catch (err) {
       setDraft((dd) => (dd ? { ...dd, err: String((err && err.message) || 'Could not book. Please try again.') } : dd));
     } finally {
@@ -275,7 +291,23 @@ export default function AppointmentsCalendar({ onOpenVisit, patients }) {
   // not follow is worth reporting but must not read as "the cancellation
   // failed" and invite a second attempt.
   async function syncSheetAndCalendar(ev, date, time) {
-    if (!ev || !ev.visitId) return '';
+    if (!ev) return '';
+    // No visit behind it, so there is no Visits row to carry the event id.
+    // Apps Script keeps it against the appointment id instead; without this a
+    // rescheduled or cancelled booking would leave a stale event in the
+    // doctor's calendar — the exact half-complete calendar this feature set
+    // out to avoid.
+    if (!ev.visitId) {
+      try {
+        const r = await syncApptCalendar({
+          appointmentId: ev.appointmentId, name: ev.name,
+          date: date || '', time: to12h(time), treatment: ev.treatment,
+        });
+        return (r && r.calendarError) ? ' Google Calendar was not updated — check it.' : '';
+      } catch {
+        return ' Google Calendar was not updated — check it.';
+      }
+    }
     try {
       // Normalised on the way in, so the sheet stops accumulating two time
       // formats. <input type="time"> hands us "14:00"; the clinical form and
