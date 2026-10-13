@@ -2,7 +2,8 @@
 // error, a bad hook order or a missing import throws here — none of which a
 // Vite build or oxlint will tell you about.
 import { renderToString } from 'react-dom/server';
-import { PrescriptionSheet, ReceiptSheet, previewSrc, PatientHealthPanel, MultiSelect } from '../src/views/Clinical.jsx';
+import { PrescriptionSheet, ReceiptSheet, previewSrc, PatientHealthPanel, MultiSelect, TimePicker12h } from '../src/views/Clinical.jsx';
+import { to12h } from '../src/whatsapp/ui.jsx';
 import { WaProvider } from '../src/whatsapp/WaContext.jsx';
 import { fmtClock, fmtDay, fmtDayOf } from '../src/whatsapp/ui.jsx';
 import { fitTop } from '../src/whatsapp/appointments/EventPopover.jsx';
@@ -274,6 +275,43 @@ for (const field of ['chiefComplaint', 'advisedTreatment', 'treatmentGroup', 'tr
     l.includes('<MultiSelect value={cform.' + field + '}'));
   check(`${field} is a searchable dropdown`, !!line && / searchable/.test(line), line && line.trim().slice(0, 110));
 }
+
+/* ── Appointment time: the sheet holds two formats ───────────────────────
+   58 rows in 24-hour and 60 in 12-hour, because the clinical form's picker
+   writes "2:00 PM" and the Appointments tab's reschedule writes "14:00".
+   The picker could only read the first, so a rescheduled visit opened with
+   an empty time — and re-saving it would have wiped the time entirely. */
+
+const tp = (value) => renderToString(h(TimePicker12h, { value, onChange() {} }));
+// react-dom/server emits <option value="2" selected="">, value first.
+const chosen = (html) => (html.match(/<option value="([^"]*)"[^>]*selected/g) || [])
+  .map((m) => m.match(/value="([^"]*)"/)[1]);
+
+check('a 12-hour value still reads correctly',
+  chosen(tp('2:00 PM')).join('|') === '2|00|PM', chosen(tp('2:00 PM')));
+check('a 24-hour value now reads too — the reported bug',
+  chosen(tp('14:00')).join('|') === '2|00|PM', chosen(tp('14:00')));
+check('morning 24-hour times keep AM', chosen(tp('09:30')).join('|') === '9|30|AM', chosen(tp('09:30')));
+check('midnight is 12 AM, not 0', chosen(tp('00:15')).join('|') === '12|15|AM', chosen(tp('00:15')));
+check('noon is 12 PM, not 0 PM', chosen(tp('12:45')).join('|') === '12|45|PM', chosen(tp('12:45')));
+check('an off-five minute is offered rather than dropped',
+  chosen(tp('14:07')).join('|') === '2|07|PM', chosen(tp('14:07')));
+check('an empty value leaves the picker blank',
+  chosen(tp('')).join('|') === '||AM', chosen(tp('')));
+// The real value from one clinic's sheet: a spreadsheet epoch, not a time.
+check('an unreadable value does not become an invented time',
+  chosen(tp('1899-12-30T05:38:50.000Z')).join('|') === '||AM',
+  chosen(tp('1899-12-30T05:38:50.000Z')));
+
+/* The write side: the reschedule normalises so the split stops growing. */
+check('to12h converts what <input type="time"> produces', to12h('14:00') === '2:00 PM', to12h('14:00'));
+check('to12h leaves an already-12-hour value alone', to12h('2:00 PM') === '2:00 PM', to12h('2:00 PM'));
+check('to12h is idempotent', to12h(to12h('14:00')) === '2:00 PM');
+check('to12h on empty stays empty', to12h('') === '' && to12h(null) === '' && to12h(undefined) === '');
+check('to12h refuses an out-of-range hour rather than wrapping it',
+  to12h('25:00') === '' && to12h('99:99') === '', [to12h('25:00'), to12h('99:99')]);
+check('to12h refuses a value that is not a time',
+  to12h('1899-12-30T05:38:50.000Z') === '', to12h('1899-12-30T05:38:50.000Z'));
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

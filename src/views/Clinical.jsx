@@ -7,7 +7,7 @@ import { TOUCH_BTN, FLUID_GRID_2COL } from '../styles';
 import { getUploadUrl, uploadToS3, getDocumentUrl, generatePrescriptionPdf, generateReceiptPdf, savePayment, getClinicId, logEvent } from '../api';
 import { DocPopupHeader, PhoneActionBar, SendStrip, useDocSend } from '../whatsapp/DocSend';
 import NextAppointmentNotice from '../whatsapp/NextAppointmentNotice';
-import { useIsPhone } from '../whatsapp/ui';
+import { useIsPhone, toMinutes } from '../whatsapp/ui';
 import { anyHealthDetails, hasRealAllergy, healthRows } from '../health';
 
 // Rasterize a server-generated HTML document (fetched from its URL) into a jsPDF instance.
@@ -415,15 +415,26 @@ function ToothTagBlock({ cform, listField, mapField, emptyCopy, onChange, readOn
   );
 }
 
-function TimePicker12h({ value, onChange, disabled }) {
+export function TimePicker12h({ value, onChange, disabled }) {
   let hr = '', min = '', ap = 'AM';
-  if (value) {
-    const m = value.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
-    if (m) { hr = m[1]; min = m[2]; ap = m[3].toUpperCase(); }
+  // Reads BOTH shapes the sheet holds. This used to match only
+  // /^(\d{1,2}):(\d{2})\s*(AM|PM)$/ — so a visit rescheduled from the
+  // Appointments tab, which writes "14:00", opened with all three dropdowns
+  // blank. The time was saved correctly; it was simply unreadable here, and
+  // re-saving the visit would then have wiped it.
+  const asMinutes = toMinutes(value);
+  if (asMinutes != null && asMinutes >= 0 && asMinutes < 24 * 60) {
+    const h24 = Math.floor(asMinutes / 60);
+    hr = String((h24 % 12) || 12);
+    min = String(asMinutes % 60).padStart(2, '0');
+    ap = h24 < 12 ? 'AM' : 'PM';
   }
   const build = (h, m, a) => h ? h + ':' + (m || '00').padStart(2, '0') + ' ' + a : '';
   const hours = Array.from({ length: 12 }, (_, i) => String(i + 1));
   const mins = Array.from({ length: 12 }, (_, i) => String(i * 5).padStart(2, '0'));
+  // <input type="time"> accepts any minute, so a stored 2:07 PM is possible.
+  // Offering it beats rounding a patient's appointment without being asked.
+  if (min && !mins.includes(min)) { mins.push(min); mins.sort(); }
   const selStyle = { ...fieldStyle, flex: 1, minWidth: 0, ...(disabled ? roStyle : {}) };
   return (
     <div style={{ display: 'flex', gap: 8 }}>

@@ -11,7 +11,7 @@ import EventPopover, { CancelModal } from '../whatsapp/appointments/EventPopover
 import AppointmentsTable from '../whatsapp/appointments/AppointmentsTable';
 import FailedMessagesBanner from '../whatsapp/FailedMessagesBanner';
 import { apptBucket, firstName } from '../whatsapp/statusModel';
-import { Toast, addDays, fmtDay, fmtMin, parseYmd, todayYmd, toMinutes } from '../whatsapp/ui';
+import { Toast, addDays, fmtDay, fmtMin, parseYmd, to12h, todayYmd, toMinutes } from '../whatsapp/ui';
 import { cancelAppointment, listAppointments, rescheduleAppointment, sendMessage } from '../whatsapp/waApi';
 import { setAppointment } from '../api';
 import { useWa } from '../whatsapp/WaContext';
@@ -204,7 +204,10 @@ export default function AppointmentsCalendar({ onOpenVisit }) {
   async function syncSheetAndCalendar(ev, date, time) {
     if (!ev || !ev.visitId) return '';
     try {
-      const r = await setAppointment({ visitId: ev.visitId, date: date || '', time: time || '' });
+      // Normalised on the way in, so the sheet stops accumulating two time
+      // formats. <input type="time"> hands us "14:00"; the clinical form and
+      // everything downstream read "2:00 PM".
+      const r = await setAppointment({ visitId: ev.visitId, date: date || '', time: to12h(time) });
       if (r && r.calendarError) return ' Google Calendar was not updated — check it.';
       return '';
     } catch {

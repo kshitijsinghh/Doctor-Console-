@@ -106,6 +106,21 @@ export function toMinutes(t) {
   return h * 60 + (isNaN(m) ? 0 : m);
 }
 
+// Any time the sheet might hold → "2:30 PM", or '' if it cannot be read.
+//
+// Two writers produce two shapes: the clinical form's picker writes
+// "2:00 PM", and the Appointments tab's reschedule uses <input type="time">
+// and writes "14:00". Both are valid everywhere except the clinical form's
+// picker, which could only parse the first — so a rescheduled visit opened
+// with an empty time. Normalising at the point of writing stops the two
+// formats diverging further; the picker also reads both now, for the rows
+// already saved the other way.
+export function to12h(raw) {
+  const m = toMinutes(raw);
+  if (m == null || m < 0 || m >= 24 * 60) return '';
+  return fmtMin(m);
+}
+
 // 870 → "14:30", for an <input type="time">.
 export function toTimeInput(m) {
   if (m == null) return '';
