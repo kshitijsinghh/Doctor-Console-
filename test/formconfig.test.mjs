@@ -12,6 +12,7 @@ import {
   medSummary, medMatches, medSuggestions, validateMedicine, searchMedicines,
   medToRow, medAbbr, emptyMedicine,
   fieldHasValue, fieldVisible, fieldKeptForVisit, newMedicinesFrom, MIN_LEARNABLE_NAME,
+  titleCaseValue,
 } from '../src/settings/formConfig.js';
 import { CHIEF_COMPLAINTS, TREATMENTS, TREATMENT_GROUPS, MEDICINE_FORMS } from '../src/options.js';
 
@@ -327,6 +328,44 @@ check('...trimmed', newMedicinesFrom([rx('  Ketorolac 10mg  ')], lib)[0].name ==
 check('...in the library shape, with no id',
   Object.keys(learned).sort().join() === 'afternoon,duration,evening,food,morning,name,night,remarks,unit',
   Object.keys(learned).sort());
+
+/* ══ New dropdown values are capitalised ══════════════════════════════ */
+
+check('a lower-case phrase is capitalised', titleCaseValue('value one') === 'Value One');
+check('leading and trailing spaces are handled by addValue, not here',
+  titleCaseValue(' value one ') === ' Value One ');
+// The reason this is not a lowercase-then-capitalise title case: the dental
+// vocabulary is full of acronyms that such a pass would destroy.
+check('an acronym survives', titleCaseValue('RCT') === 'RCT');
+check('...and a mixed one', titleCaseValue('Re-RCT') === 'Re-RCT');
+check('...and BMP, IOPA, GIC, TMJ, SDF, ICM, WL',
+  ['BMP', 'IOPA', 'GIC', 'TMJ', 'SDF', 'ICM', 'WL'].every((a) => titleCaseValue(a) === a));
+check('a hyphen starts a new word', titleCaseValue('x-ray') === 'X-Ray');
+check('a slash does too', titleCaseValue('stains / deposits') === 'Stains / Deposits');
+// No word boundary inside "500mg", so a dose is not mangled into "500Mg".
+check('a dose attached to digits is left alone',
+  titleCaseValue('amoxicillin 500mg') === 'Amoxicillin 500mg', titleCaseValue('amoxicillin 500mg'));
+check('an already-capitalised phrase is unchanged', titleCaseValue('Composite Restoration') === 'Composite Restoration');
+check('empty and null are safe', titleCaseValue('') === '' && titleCaseValue(null) === '' && titleCaseValue(undefined) === '');
+
+let tc = defaultConfig();
+const added = addValue(tc, 'chiefComplaint', '  value one  ');
+tc = added.config;
+check('addValue stores the capitalised, trimmed value',
+  valueRows(tc, 'chiefComplaint').slice(-1)[0].value === 'Value One',
+  valueRows(tc, 'chiefComplaint').slice(-1)[0]);
+check('...and it is marked as the doctor\'s own', valueRows(tc, 'chiefComplaint').slice(-1)[0].custom === true);
+check('...and shows in the form that way', enabledValues(tc, 'chiefComplaint').includes('Value One'));
+
+// Capitalising must not let the same value in twice by a different route.
+check('adding it again in lower case is still refused',
+  /already in this list/.test(addValue(tc, 'chiefComplaint', 'value one').error));
+check('...and in upper case', /already in this list/.test(addValue(tc, 'chiefComplaint', 'VALUE ONE').error));
+check('a built-in is still matched case-insensitively',
+  /already in this list/.test(addValue(defaultConfig(), 'treatment', 'rct').error));
+// A built-in typed in lower case must not be re-added as a capitalised copy.
+check('...and typing "composite restoration" does not create a second entry',
+  /already in this list/.test(addValue(defaultConfig(), 'treatment', 'composite restoration').error));
 
 
 console.log(`\n${pass} passed, ${fail} failed`);

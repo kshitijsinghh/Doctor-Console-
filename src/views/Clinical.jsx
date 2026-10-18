@@ -1163,7 +1163,10 @@ export default function Clinical({
   useEffect(() => {
     if (!savedFlash || readOnly) return;
     const fresh = newMedicinesFrom(cform.medicines, medLibrary);
-    if (fresh.length) addMedicines(fresh);
+    // Fire and forget, and explicitly so. addMedicines already swallows a
+    // failure per medicine, but an unguarded call here would turn any future
+    // change to it into an unhandled rejection in the doctor's console.
+    if (fresh.length) addMedicines(fresh).catch(() => {});
     // Deliberately keyed on savedFlash alone. It goes false→true exactly once
     // per successful save, so the effect runs once however many times the form
     // re-renders while the flash is showing. Should that ever change, the

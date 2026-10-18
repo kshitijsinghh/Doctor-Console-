@@ -244,11 +244,23 @@ export function setAllValues(config, key, enabled) {
   return withRows(config, key, valueRows(config, key).map((r) => ({ ...r, enabled: !!enabled })));
 }
 
+// Capitalises the first letter of each word and touches nothing else.
+//
+// Deliberately NOT a lowercase-then-capitalise title case: that would turn
+// RCT into Rct, IOPA into Iopa and BMP into Bmp, mangling most of the dental
+// vocabulary. Only a lowercase letter at a word boundary is raised, so
+// "value one" becomes "Value One" while anything already capitalised is left
+// exactly as the doctor typed it. Mirrors the helper the prescription row
+// already uses for medicine names.
+export function titleCaseValue(raw) {
+  return String(raw == null ? '' : raw).replace(/\b[a-z]/g, (c) => c.toUpperCase());
+}
+
 // Returns { config, error }. Case-insensitive duplicates are refused, because
 // two values differing only in case read as one list to a doctor and as two
 // to every report that groups by treatment.
 export function addValue(config, key, raw) {
-  const value = String(raw == null ? '' : raw).trim();
+  const value = titleCaseValue(String(raw == null ? '' : raw).trim());
   if (!value) return { config, error: '' };
   const rows = valueRows(config, key);
   if (rows.some((r) => r.value.toLowerCase() === value.toLowerCase())) {

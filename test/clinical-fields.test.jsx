@@ -396,6 +396,117 @@ try { m.update({ savedFlash: true }); } catch { threw = true; }
 check('a failing library write does not break the saved form', !threw);
 m.unmount();
 
+/* ══ The whole chain, with only fetch stubbed ═════════════════════════
+   Every test above hands Clinical a fake addMedicines, so the path from the
+   form through the context, the settings API and waFetch has never actually
+   run. This is the part that decides whether a medicine reaches the server. */
+
+const { FormConfigProvider } = await import('../src/settings/FormConfigContext.jsx');
+
+dom.window.localStorage.setItem('pp_session', JSON.stringify({
+  accessToken: 'test-token', expiresAt: Math.floor(Date.now() / 1000) + 3600,
+}));
+
+const http = [];
+global.fetch = async (url, opts = {}) => {
+  const u = String(url);
+  const method = String(opts.method || 'GET').toUpperCase();
+  let body = null;
+  try { body = opts.body ? JSON.parse(opts.body) : null; } catch { /* not json */ }
+  http.push({ url: u, method, body });
+  if (u.includes('/settings/doctor-form')) {
+    return new Response(JSON.stringify({ ok: true, fields: null, dropdowns: null, medicines: [], updatedAt: null }),
+      { status: 200, headers: { 'content-type': 'application/json' } });
+  }
+  if (u.includes('/medicines')) {
+    return new Response(JSON.stringify({ ok: true, medicine: { id: 'srv1', ...(body || {}) } }),
+      { status: 200, headers: { 'content-type': 'application/json' } });
+  }
+  return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'content-type': 'application/json' } });
+};
+
+async function settle() {
+  for (let i = 0; i < 12; i++) await act(async () => { await Promise.resolve(); });
+}
+
+function mountReal(cform) {
+  const host = dom.window.document.createElement('div');
+  dom.window.document.body.appendChild(host);
+  const root = createRoot(host);
+  let state = cform;
+  let extra = {};
+  function render() {
+    root.render(
+      h(WaProvider, { org: { waEnabled: false }, orgLoaded: true },
+        h(FormConfigProvider, null,
+          h(Clinical, {
+            ...makeProps(state, (k, v) => { state = { ...state, [k]: v }; render(); }),
+            ...extra,
+          }))),
+    );
+  }
+  act(() => { render(); });
+  return {
+    host,
+    update: (p) => { extra = { ...extra, ...p }; act(() => { render(); }); },
+    unmount: () => act(() => root.unmount()),
+  };
+}
+
+const realRow = { name: 'Ketorolac 10mg', unit: 'Tablet', morning: true, afternoon: false, evening: false, night: true, food: 'After Food', duration: '2', remarks: 'Only if in pain' };
+const real = mountReal({ ...baseCform(), medicines: [realRow] });
+await settle();
+
+check('the console loads its settings at boot',
+  http.some((c) => c.method === 'GET' && c.url.includes('/settings/doctor-form')),
+  http.map((c) => c.method + ' ' + c.url));
+
+const before = http.filter((c) => c.url.includes('/medicines')).length;
+check('nothing is posted to the library before the visit saves', before === 0, before);
+
+real.update({ savedFlash: true });
+await settle();
+
+const posts = http.filter((c) => c.method === 'POST' && c.url.includes('/medicines'));
+check('saving the visit POSTs the new medicine for real', posts.length === 1,
+  http.filter((c) => c.url.includes('/medicines')).map((c) => c.method + ' ' + c.url));
+check('...to the create endpoint, not the delete one',
+  posts.length === 1 && /\/medicines$/.test(posts[0].url.split('?')[0]), posts[0] && posts[0].url);
+check('...with the clinic id the Lambda requires',
+  posts.length === 1 && posts[0].body.clinicId === 'clinic_test', posts[0] && posts[0].body);
+check('...and the whole row, not just the name',
+  posts.length === 1 && posts[0].body.name === 'Ketorolac 10mg' && posts[0].body.unit === 'Tablet'
+  && posts[0].body.duration === '2' && posts[0].body.remarks === 'Only if in pain'
+  && posts[0].body.night === true, posts[0] && posts[0].body);
+check('...and no id, so the server assigns one',
+  posts.length === 1 && posts[0].body.id === undefined, posts[0] && posts[0].body);
+real.unmount();
+
+// A medicine already in the library must not be posted again.
+http.length = 0;
+global.fetch = (function (inner) {
+  return async (url, opts = {}) => {
+    const u = String(url);
+    if (u.includes('/settings/doctor-form') && String(opts.method || 'GET').toUpperCase() === 'GET') {
+      http.push({ url: u, method: 'GET', body: null });
+      return new Response(JSON.stringify({
+        ok: true, fields: null, dropdowns: null, updatedAt: null,
+        medicines: [{ id: 'srv1', name: 'Ketorolac 10mg', unit: 'Tablet', morning: true, afternoon: false, evening: false, night: true, food: 'After Food', duration: '2', remarks: '' }],
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    return inner(url, opts);
+  };
+}(global.fetch));
+
+const real2 = mountReal({ ...baseCform(), medicines: [realRow] });
+await settle();
+real2.update({ savedFlash: true });
+await settle();
+check('a medicine already in the library is not posted again',
+  http.filter((c) => c.method === 'POST' && c.url.includes('/medicines')).length === 0,
+  http.map((c) => c.method + ' ' + c.url));
+real2.unmount();
+
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

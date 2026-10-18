@@ -352,9 +352,9 @@ export default function Messages() {
                     <tr style={{ textAlign: 'left', color: '#7a9994', fontSize: 11.5, letterSpacing: '.05em', textTransform: 'uppercase' }}>
                       <th style={{ padding: '12px 10px 12px 20px', fontWeight: 700 }}>Sent</th>
                       <th style={{ padding: '12px 10px', fontWeight: 700 }}>Patient</th>
+                      <th style={{ padding: '12px 10px', fontWeight: 700 }}>Patient name</th>
                       <th style={{ padding: '12px 10px', fontWeight: 700 }}>WhatsApp number</th>
                       <th style={{ padding: '12px 10px', fontWeight: 700 }}>Trigger event</th>
-                      <th style={{ padding: '12px 10px', fontWeight: 700 }}>Template</th>
                       <th style={{ padding: '12px 10px', fontWeight: 700 }}>Status</th>
                       <th style={{ padding: '12px 20px 12px 10px', fontWeight: 700 }} />
                     </tr>
@@ -374,19 +374,16 @@ export default function Messages() {
                             {fmtDayOf(m.sentAt)}
                             <span style={{ display: 'block', fontSize: 12, color: '#98b0ab' }}>{fmtClock(m.sentAt)}</span>
                           </td>
-                          <td style={{ padding: '12px 10px' }}>
-                            <span style={{ display: 'block', color: '#0e3b39', fontWeight: 600 }}>{m.name}</span>
-                            <span style={{ display: 'block', fontSize: 12, color: '#98b0ab' }}>{m.patientId}</span>
+                          <td style={{ padding: '12px 10px', color: '#5c7a76', whiteSpace: 'nowrap' }}>
+                            {m.patientId || '—'}
+                          </td>
+                          <td style={{ padding: '12px 10px', color: '#0e3b39', fontWeight: 600 }}>
+                            {m.name || '—'}
                           </td>
                           <td style={{ padding: '12px 10px', color: '#5c7a76', whiteSpace: 'nowrap' }}>{fmtPhone(m.mobile)}</td>
                           <td style={{ padding: '12px 10px', color: '#33534f', whiteSpace: 'nowrap' }}>
                             <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: trig.color, marginRight: 7 }} />
                             {trig.event}
-                          </td>
-                          <td style={{ padding: '12px 10px' }}>
-                            <code style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 11.5, color: '#5c7a76' }}>
-                              {m.templateName || '—'}
-                            </code>
                           </td>
                           <td style={{ padding: '12px 10px' }}>
                             <span style={{ display: 'inline-block', padding: '3px 10px', borderRadius: 100, fontWeight: 700, fontSize: 12, background: look.bg, color: look.ink }}>
