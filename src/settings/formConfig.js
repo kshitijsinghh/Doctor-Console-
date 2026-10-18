@@ -381,3 +381,93 @@ export function searchMedicines(meds, query) {
   if (!q) return meds || [];
   return (meds || []).filter((m) => medMatches(m, q) || String(m.name || '').toLowerCase().includes(q));
 }
+
+// ── a field that is off but has already been filled in ────────────────────
+//
+// Switching a field off hides it from NEW visits. A visit that was recorded
+// while the field was on still holds its value, and that value has to stay
+// reachable — otherwise opening an old visit silently drops it from the form,
+// and the next save writes the record back without it.
+//
+// This is the field-level counterpart of valuesForVisit, which already does
+// the same job for individual dropdown values.
+
+// Which cform properties each field owns. A field counts as "already filled
+// in" when any one of them holds something.
+export const FIELD_VALUE_KEYS = {
+  medicalHistory: ['medicalHistory'],
+  chiefComplaint: ['chiefComplaint'],
+  description: ['chiefDescription'],
+  diagnosis: ['diagnosis'],
+  advised: ['advisedTreatment', 'advisedTreatmentOther', 'advisedTeeth'],
+  investigation: ['investigation'],
+  treatmentGroup: ['treatmentGroup'],
+  treatment: ['treatment', 'treatmentOther', 'treatmentTeeth', 'toothNumber'],
+  medicine: ['medicines'],
+  billing: [],
+  followUp: ['treatmentStage', 'nextAppointment', 'nextAppointmentTime', 'googleReviewTaken'],
+  lab: ['labName', 'labToothNumber', 'labDescription'],
+  documents: ['documents'],
+  comments: ['comments'],
+};
+
+function hasValue(v) {
+  if (v === null || v === undefined) return false;
+  if (Array.isArray(v)) return v.length > 0;
+  if (typeof v === 'object') return Object.keys(v).some((k) => hasValue(v[k]));
+  return String(v).trim() !== '';
+}
+
+export function fieldHasValue(cform, key) {
+  if (!cform) return false;
+  return (FIELD_VALUE_KEYS[key] || []).some((k) => {
+    // A prescription always carries one blank row once "Add medicine" is
+    // pressed, so a non-empty array is not the same as a prescription.
+    if (k === 'medicines') {
+      return Array.isArray(cform.medicines)
+        && cform.medicines.some((m) => m && String(m.name || '').trim() !== '');
+    }
+    return hasValue(cform[k]);
+  });
+}
+
+// The single answer to "does this field appear on THIS visit?".
+//
+// Note this overrides the treatmentGroup→treatment dependency as well: if a
+// visit recorded a treatment group before Current treatment was switched off,
+// the group still shows. Keeping the record readable matters more than the
+// tidiness of the dependency.
+export function fieldVisible(config, cform, key) {
+  return fieldOn(config, key) || fieldHasValue(cform, key);
+}
+
+// True only when the field is showing BECAUSE of the visit, not the config.
+export function fieldKeptForVisit(config, cform, key) {
+  return !fieldOn(config, key) && fieldHasValue(cform, key);
+}
+
+// ── learning medicines from what was prescribed ───────────────────────────
+
+// Anything shorter is far more likely to be a slip than a medicine, and a
+// two-character entry in the library would match almost every search.
+export const MIN_LEARNABLE_NAME = 3;
+
+// The prescribed rows that are not already in the library, in the library's
+// own shape and ready to save. Matching is case-insensitive, and two identical
+// rows in one prescription yield one medicine.
+export function newMedicinesFrom(rows, library) {
+  const known = new Set(
+    (library || []).map((m) => String((m && m.name) || '').trim().toLowerCase()).filter(Boolean),
+  );
+  const out = [];
+  (rows || []).forEach((r) => {
+    if (!r) return;
+    const name = String(r.name || '').trim();
+    if (name.length < MIN_LEARNABLE_NAME) return;
+    const lower = name.toLowerCase();
+    if (known.has(lower)) return;
+    known.add(lower);
+    out.push(medToRow({ ...r, name }));
+  });
+  return out;
+}

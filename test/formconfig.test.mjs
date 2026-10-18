@@ -11,6 +11,7 @@ import {
   setField, toggleValue, setAllValues, addValue, removeValue, toWire,
   medSummary, medMatches, medSuggestions, validateMedicine, searchMedicines,
   medToRow, medAbbr, emptyMedicine,
+  fieldHasValue, fieldVisible, fieldKeptForVisit, newMedicinesFrom, MIN_LEARNABLE_NAME,
 } from '../src/settings/formConfig.js';
 import { CHIEF_COMPLAINTS, TREATMENTS, TREATMENT_GROUPS, MEDICINE_FORMS } from '../src/options.js';
 
@@ -232,6 +233,101 @@ check('...while the form\'s autocomplete does NOT offer Paracetamol for "amo"',
   medSuggestions(meds, 'amo').map((m) => m.name).join() === 'Amoxicillin 500mg,Amoxicillin + Clavulanic acid 625mg',
   medSuggestions(meds, 'amo').map((m) => m.name));
 check('an empty search returns everything', searchMedicines(meds, '').length === meds.length);
+
+/* ══ A field that is off but already filled in ═════════════════════════ */
+
+const EMPTY = {
+  medicalHistory: '', chiefDescription: '', diagnosis: '', investigation: '', comments: '',
+  chiefComplaint: [], advisedTreatment: [], treatment: [], treatmentGroup: [],
+  treatmentTeeth: {}, advisedTeeth: {}, medicines: [], documents: [],
+  treatmentStage: '', nextAppointment: '', labName: '', labDescription: '',
+};
+
+const off = (k) => setField(defaultConfig(), k, false);
+
+check('a field that is on shows on an empty visit', fieldVisible(defaultConfig(), EMPTY, 'diagnosis'));
+check('a field that is off hides on an empty visit', !fieldVisible(off('diagnosis'), EMPTY, 'diagnosis'));
+// The whole point of the change.
+check('...but shows on a visit that recorded a value',
+  fieldVisible(off('diagnosis'), { ...EMPTY, diagnosis: 'Irreversible pulpitis' }, 'diagnosis'));
+check('...and is flagged as kept, not configured',
+  fieldKeptForVisit(off('diagnosis'), { ...EMPTY, diagnosis: 'x' }, 'diagnosis') === true);
+check('...while a field that is simply on is not flagged as kept',
+  fieldKeptForVisit(defaultConfig(), { ...EMPTY, diagnosis: 'x' }, 'diagnosis') === false);
+check('whitespace is not a value', !fieldVisible(off('diagnosis'), { ...EMPTY, diagnosis: '   ' }, 'diagnosis'));
+
+// Each field type: text, multi-select array, tooth map, prescription, documents.
+check('a multi-select with a value keeps its field',
+  fieldVisible(off('advised'), { ...EMPTY, advisedTreatment: ['RCT'] }, 'advised'));
+check('an empty multi-select does not', !fieldVisible(off('advised'), EMPTY, 'advised'));
+check('tooth tags alone keep the treatment field',
+  fieldVisible(off('treatment'), { ...EMPTY, treatmentTeeth: { RCT: ['11'] } }, 'treatment'));
+check('an empty tooth map does not', !fieldVisible(off('treatment'), { ...EMPTY, treatmentTeeth: {} }, 'treatment'));
+check('a tooth map of empty lists does not',
+  !fieldVisible(off('treatment'), { ...EMPTY, treatmentTeeth: { RCT: [] } }, 'treatment'));
+check('a document keeps the documents field',
+  fieldVisible(off('documents'), { ...EMPTY, documents: [{ name: 'xray.png' }] }, 'documents'));
+check('a comment keeps the comments field',
+  fieldVisible(off('comments'), { ...EMPTY, comments: 'Called to confirm' }, 'comments'));
+check('a next appointment keeps follow-up',
+  fieldVisible(off('followUp'), { ...EMPTY, nextAppointment: '2026-10-20' }, 'followUp'));
+check('a lab name keeps lab requirements',
+  fieldVisible(off('lab'), { ...EMPTY, labName: 'DentCare Lab' }, 'lab'));
+
+// A prescription row exists the moment "Add medicine" is pressed, so a
+// non-empty array is not the same as a prescription.
+const blankRow = [{ name: '', unit: 'Tablet', morning: true, food: 'After Food', duration: '' }];
+check('a blank medicine row does NOT keep the medicine field',
+  !fieldVisible(off('medicine'), { ...EMPTY, medicines: blankRow }, 'medicine'), blankRow);
+check('...but a named one does',
+  fieldVisible(off('medicine'), { ...EMPTY, medicines: [{ name: 'Ibuprofen 400mg' }] }, 'medicine'));
+
+// Keeping the record readable beats the tidiness of the dependency.
+const treatOff = setField(defaultConfig(), 'treatment', false);
+check('treatment group is hidden when current treatment is off', !fieldVisible(treatOff, EMPTY, 'treatmentGroup'));
+check('...but still shows on a visit that recorded one',
+  fieldVisible(treatOff, { ...EMPTY, treatmentGroup: ['Endodontics'] }, 'treatmentGroup'));
+
+check('a missing cform never throws', fieldVisible(off('diagnosis'), null, 'diagnosis') === false);
+check('an unknown field key is treated as visible', fieldVisible(defaultConfig(), EMPTY, 'nonsense') === true);
+check('fieldHasValue on an unknown key is false', fieldHasValue(EMPTY, 'nonsense') === false);
+
+/* ══ Learning medicines from a prescription ════════════════════════════ */
+
+const lib = [
+  { id: 'a', name: 'Amoxicillin 500mg', unit: 'Capsule', morning: true, night: true, food: 'After Food', duration: '5', remarks: '' },
+];
+const rx = (name, extra) => ({ name, unit: 'Tablet', morning: true, afternoon: false, evening: false, night: true, food: 'After Food', duration: '3', remarks: '', ...extra });
+
+check('a medicine not in the library is learned',
+  newMedicinesFrom([rx('Ketorolac 10mg')], lib).map((m) => m.name).join() === 'Ketorolac 10mg');
+check('one already in the library is not',
+  newMedicinesFrom([rx('Amoxicillin 500mg')], lib).length === 0);
+check('...whatever the case', newMedicinesFrom([rx('amoxicillin 500MG')], lib).length === 0);
+check('...and whatever the surrounding spaces', newMedicinesFrom([rx('  Amoxicillin 500mg  ')], lib).length === 0);
+check('two identical rows in one prescription yield one medicine',
+  newMedicinesFrom([rx('Ketorolac 10mg'), rx('ketorolac 10MG')], lib).length === 1);
+check('a blank row is skipped', newMedicinesFrom([rx(''), rx('   ')], lib).length === 0);
+// A two-character entry would match almost every search in the autocomplete.
+check('a name shorter than the minimum is skipped',
+  newMedicinesFrom([rx('ab')], lib).length === 0 && MIN_LEARNABLE_NAME === 3);
+check('...and one at the minimum is kept', newMedicinesFrom([rx('abc')], lib).length === 1);
+check('an empty library learns everything named',
+  newMedicinesFrom([rx('A one'), rx('B two')], []).length === 2);
+check('no rows at all is harmless',
+  newMedicinesFrom(null, lib).length === 0 && newMedicinesFrom([], null).length === 0);
+check('a null row is skipped', newMedicinesFrom([null, rx('Ketorolac 10mg')], lib).length === 1);
+
+const learned = newMedicinesFrom([rx('Ketorolac 10mg', { remarks: 'Only if in pain', duration: '2' })], lib)[0];
+check('the learned medicine carries the whole row',
+  learned.unit === 'Tablet' && learned.morning === true && learned.afternoon === false
+  && learned.night === true && learned.food === 'After Food' && learned.duration === '2'
+  && learned.remarks === 'Only if in pain', learned);
+check('...trimmed', newMedicinesFrom([rx('  Ketorolac 10mg  ')], lib)[0].name === 'Ketorolac 10mg');
+check('...in the library shape, with no id',
+  Object.keys(learned).sort().join() === 'afternoon,duration,evening,food,morning,name,night,remarks,unit',
+  Object.keys(learned).sort());
+
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

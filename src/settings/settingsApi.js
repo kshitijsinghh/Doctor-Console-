@@ -65,8 +65,13 @@ export function updateMedicine(id, med) {
   }, { op: 'updateMedicine' }).then((j) => (j && j.medicine) || null);
 }
 
+// A POST, not a DELETE. The API Gateway CORS config allows GET, POST, OPTIONS
+// and PUT, so a browser preflight for DELETE is refused — and widening that
+// list means rewriting a setting shared by every route on the API, where a
+// mistake would break every clinic's console at once.
 export function deleteMedicine(id) {
-  return waFetch('/medicines/' + encodeURIComponent(id) + qs({ clinicId: CLINIC_ID }), {
-    method: 'DELETE',
+  return waFetch('/medicines/' + encodeURIComponent(id) + '/delete', {
+    method: 'POST',
+    body: JSON.stringify({ clinicId: CLINIC_ID }),
   }, { op: 'deleteMedicine' });
 }

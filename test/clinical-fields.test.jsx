@@ -71,18 +71,23 @@ const baseCform = () => ({
 // Mounts the form and returns helpers. `cform` is kept in a closure and
 // updated by onSetField, so the form behaves like the real one: typing into a
 // medicine row actually changes the row.
-function mount(config, { cform = baseCform(), medicines = LIBRARY } = {}) {
+function mount(config, { cform = baseCform(), medicines = LIBRARY, props = {}, addMedicines } = {}) {
   const host = dom.window.document.createElement('div');
   dom.window.document.body.appendChild(host);
   const root = createRoot(host);
   let state = cform;
+  let extra = props;
   const sets = [];
+  const ctx = { config, medicines, loaded: true, reload() {}, addMedicines: addMedicines || (async () => []) };
 
   function render() {
     root.render(
       h(WaProvider, { org: { waEnabled: false }, orgLoaded: true },
-        h(FormConfigContext.Provider, { value: { config, medicines, loaded: true, reload() {} } },
-          h(Clinical, makeProps(state, (k, v) => { sets.push([k, v]); state = { ...state, [k]: v }; render(); })))),
+        h(FormConfigContext.Provider, { value: ctx },
+          h(Clinical, {
+            ...makeProps(state, (k, v) => { sets.push([k, v]); state = { ...state, [k]: v }; render(); }),
+            ...extra,
+          }))),
     );
   }
   act(() => { render(); });
@@ -98,7 +103,9 @@ function mount(config, { cform = baseCform(), medicines = LIBRARY } = {}) {
     click(tab);
   }
 
-  return { host, root, text, html, findByText, click, gotoStep2, sets, state: () => state,
+  const update = (partial) => { extra = { ...extra, ...partial }; act(() => { render(); }); };
+
+  return { host, root, text, html, findByText, click, gotoStep2, sets, update, state: () => state,
     unmount: () => act(() => root.unmount()) };
 }
 
@@ -268,6 +275,127 @@ check('an empty library still lets the doctor type', m.state().medicines[0].name
   m.state().medicines[0].name);
 check('...and offers the one-off row only', /as a one-off medicine/.test(m.html()));
 m.unmount();
+
+/* ══ A field switched off still shows on a visit that recorded it ══════ */
+
+// Switched off and the visit is empty — gone, as before.
+m = mount(setField(defaultConfig(), 'diagnosis', false));
+check('a switched-off field is gone from a new visit', !/Clinical diagnosis/.test(m.html()));
+m.unmount();
+
+// Switched off but this visit recorded one — it must still be editable, or
+// opening the visit drops the value and the next save writes it away.
+m = mount(setField(defaultConfig(), 'diagnosis', false),
+  { cform: { ...baseCform(), diagnosis: 'Irreversible pulpitis' } });
+check('...but shows on a visit that recorded a value', /Clinical diagnosis/.test(m.html()));
+check('...with the value in it', m.html().includes('Irreversible pulpitis'), 'value missing');
+m.unmount();
+
+m = mount(setField(defaultConfig(), 'medicine', false),
+  { cform: { ...baseCform(), medicines: [{ name: 'Ibuprofen 400mg', unit: 'Tablet', morning: true, afternoon: false, evening: false, night: true, food: 'After Food', duration: '3', remarks: '' }] } });
+check('a prescription keeps the medicine section visible', /Prescribed medicine/.test(m.text()));
+m.unmount();
+
+m = mount(setField(defaultConfig(), 'medicine', false),
+  { cform: { ...baseCform(), medicines: [{ name: '', unit: 'Tablet', morning: false, afternoon: false, evening: false, night: false, food: 'After Food', duration: '', remarks: '' }] } });
+check('...but a blank medicine row does not', !/Prescribed medicine/.test(m.text()));
+m.unmount();
+
+// Step 2, where the guards are hand-written fragments.
+m = mount(setField(defaultConfig(), 'lab', false), { cform: { ...baseCform(), labName: 'DentCare Lab' } });
+m.gotoStep2();
+check('a lab name recorded earlier keeps Lab Requirements visible', /Lab Requirements/.test(m.text()));
+m.unmount();
+
+m = mount(setField(defaultConfig(), 'followUp', false), { cform: { ...baseCform(), treatmentStage: 'In Progress' } });
+m.gotoStep2();
+check('a treatment stage recorded earlier keeps Follow-up visible', /Treatment stage/.test(m.text()));
+m.unmount();
+
+m = mount(setField(defaultConfig(), 'followUp', false), { cform: baseCform() });
+m.gotoStep2();
+check('...and an empty visit still hides it', !/Treatment stage/.test(m.text()));
+m.unmount();
+
+// Current treatment off, but the visit recorded a treatment group: the record
+// wins over the dependency.
+m = mount(setField(defaultConfig(), 'treatment', false), { cform: { ...baseCform(), treatmentGroup: ['Endodontics'] } });
+check('a recorded treatment group survives its parent being switched off',
+  /Treatment group/.test(m.text()));
+m.unmount();
+
+/* ══ A medicine written on a prescription is added to the library ══════ */
+
+function learner() {
+  const calls = [];
+  return { calls, fn: async (list) => { calls.push(list); return list.map((x, i) => ({ ...x, id: 'new' + i })); } };
+}
+
+const rxRow = (name) => ({ name, unit: 'Tablet', morning: true, afternoon: false, evening: false, night: true, food: 'After Food', duration: '3', remarks: 'Only if in pain' });
+
+let L = learner();
+m = mount(defaultConfig(), {
+  medicines: LIBRARY,
+  cform: { ...baseCform(), medicines: [rxRow('Ketorolac 10mg')] },
+  addMedicines: L.fn,
+});
+check('nothing is learned before the visit saves', L.calls.length === 0);
+m.update({ savedFlash: true });
+check('a medicine not in the library is learned once the visit saves',
+  L.calls.length === 1 && L.calls[0][0].name === 'Ketorolac 10mg', L.calls);
+check('...carrying the whole row, not just the name',
+  L.calls[0][0].duration === '3' && L.calls[0][0].remarks === 'Only if in pain'
+  && L.calls[0][0].night === true, L.calls[0][0]);
+// savedFlash stays true for ~900ms and the form re-renders in that window;
+// the effect is keyed on the flag alone so it runs once, not once per render.
+m.update({ savedFlash: true, saving: false });
+m.update({ savedFlash: true, error: '' });
+check('...once, however many times the form re-renders meanwhile', L.calls.length === 1, L.calls.length);
+m.unmount();
+
+L = learner();
+m = mount(defaultConfig(), {
+  medicines: LIBRARY,
+  cform: { ...baseCform(), medicines: [rxRow('Amoxicillin 500mg')] },
+  addMedicines: L.fn,
+});
+m.update({ savedFlash: true });
+check('a medicine already in the library is not learned again', L.calls.length === 0, L.calls);
+m.unmount();
+
+L = learner();
+m = mount(defaultConfig(), {
+  medicines: LIBRARY,
+  cform: { ...baseCform(), medicines: [rxRow('')] },
+  addMedicines: L.fn,
+});
+m.update({ savedFlash: true });
+check('a blank row teaches nothing', L.calls.length === 0);
+m.unmount();
+
+// A read-only view is someone looking at an appointment, not prescribing.
+L = learner();
+m = mount(defaultConfig(), {
+  medicines: LIBRARY,
+  cform: { ...baseCform(), medicines: [rxRow('Ketorolac 10mg')] },
+  addMedicines: L.fn,
+  props: { readOnly: true },
+});
+m.update({ savedFlash: true, readOnly: true });
+check('a read-only view never writes to the library', L.calls.length === 0);
+m.unmount();
+
+// The visit must save even when the library write blows up.
+m = mount(defaultConfig(), {
+  medicines: LIBRARY,
+  cform: { ...baseCform(), medicines: [rxRow('Ketorolac 10mg')] },
+  addMedicines: async () => { throw new Error('network'); },
+});
+let threw = false;
+try { m.update({ savedFlash: true }); } catch { threw = true; }
+check('a failing library write does not break the saved form', !threw);
+m.unmount();
+
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

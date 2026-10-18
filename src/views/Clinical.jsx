@@ -10,7 +10,7 @@ import NextAppointmentNotice from '../whatsapp/NextAppointmentNotice';
 import { useIsPhone, toMinutes } from '../whatsapp/ui';
 import { anyHealthDetails, hasRealAllergy, healthRows } from '../health';
 import { useFormConfig } from '../settings/FormConfigContext';
-import { fieldOn, valuesForVisit, enabledValues, medToRow } from '../settings/formConfig';
+import { fieldVisible, enabledValues, valuesForVisit, medToRow, newMedicinesFrom } from '../settings/formConfig';
 import MedicinePicker from '../settings/MedicinePicker';
 
 // Rasterize a server-generated HTML document (fetched from its URL) into a jsPDF instance.
@@ -1126,8 +1126,11 @@ export default function Clinical({
   // What the clinic has configured. Defaults to today's form when nothing is
   // configured or the settings call failed, so this is never the reason a
   // doctor cannot record a visit.
-  const { config: formCfg, medicines: medLibrary } = useFormConfig();
-  const showField = (k) => fieldOn(formCfg, k);
+  const { config: formCfg, medicines: medLibrary, addMedicines } = useFormConfig();
+  // A field switched off is hidden from new visits, but a visit that already
+  // recorded a value for it still shows it — otherwise opening an old visit
+  // drops the value from the form and the next save writes it away.
+  const showField = (k) => fieldVisible(formCfg, cform, k);
   // Old visits keep their values: a treatment recorded before it was hidden is
   // still offered while that visit is open, so opening it cannot blank the field.
   const optsFor = (key, current) => valuesForVisit(formCfg, key, current);
@@ -1150,6 +1153,23 @@ export default function Clinical({
     dateLabel: cur.dateLabel, name: cur.name, ageGender: cur.ageGender,
     mobile: cur.mobile, patientId: cur.patientId, visitId: cur.visitId,
   };
+
+  // Medicines written on this prescription that are not in the library yet
+  // are added to it once the VISIT has saved — never before, so a library
+  // write can neither delay nor fail the thing the doctor came to do.
+  //
+  // savedFlash is the only success signal available here: App sets it after
+  // saveClinical resolves and clears it again before navigating away.
+  useEffect(() => {
+    if (!savedFlash || readOnly) return;
+    const fresh = newMedicinesFrom(cform.medicines, medLibrary);
+    if (fresh.length) addMedicines(fresh);
+    // Deliberately keyed on savedFlash alone. It goes false→true exactly once
+    // per successful save, so the effect runs once however many times the form
+    // re-renders while the flash is showing. Should that ever change, the
+    // server refuses a medicine whose name is already in the library, so the
+    // worst case is a wasted request rather than a duplicated record.
+  }, [savedFlash]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ── Medicine handlers ── */
   function addMedicine() { onSetField('medicines', [...medicines, { name: '', unit: 'Tablet', morning: false, afternoon: false, evening: false, night: false, food: 'After Food', duration: '' }]); }
