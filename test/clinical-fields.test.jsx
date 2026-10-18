@@ -29,6 +29,7 @@ const Clinical = (await import('../src/views/Clinical.jsx')).default;
 const { FormConfigContext } = await import('../src/settings/FormConfigContext.jsx');
 const { WaProvider } = await import('../src/whatsapp/WaContext.jsx');
 const { defaultConfig, setField, addValue, toggleValue } = await import('../src/settings/formConfig.js');
+const MedicinesTab = (await import('../src/settings/MedicinesTab.jsx')).default;
 
 let pass = 0, fail = 0;
 const check = (n, ok, got) => {
@@ -506,6 +507,134 @@ check('a medicine already in the library is not posted again',
   http.filter((c) => c.method === 'POST' && c.url.includes('/medicines')).length === 0,
   http.map((c) => c.method + ' ' + c.url));
 real2.unmount();
+
+/* ══ Typing a free-text value must produce ONE value, not one per letter ══
+
+   The regression this pins: the dropdown options were being widened with the
+   LIVE field value, so each partial the doctor typed into the Other box
+   became a known option, which MultiSelect then reclassified from a draft
+   into a standard selected chip the next keystroke could not replace.
+   Typing "New" left N, Ne and New behind as three separate complaints. */
+
+const clickEl = (el) => act(() => { el.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })); });
+// Last match, not first: a wrapper's textContent equals its only child's, and
+// querySelectorAll returns ancestors first — so the first hit is the div with
+// no click handler on it.
+const byText = (mm, sel, re) => [...mm.host.querySelectorAll(sel)].filter((el) => re.test((el.textContent || '').trim())).pop();
+
+function openPicker(mm, labelText) {
+  const lab = [...mm.host.querySelectorAll('label')].find((l) => (l.textContent || '').trim() === labelText);
+  if (!lab) throw new Error('no label: ' + labelText);
+  const box = lab.nextElementSibling && lab.nextElementSibling.querySelector('div');
+  if (!box) throw new Error('no chip box for ' + labelText);
+  clickEl(box);
+}
+
+m = mount(defaultConfig());
+openPicker(m, 'Chief complaint');
+check('the picker opens', /Add Other/.test(m.text()), m.text().slice(0, 100));
+
+const addOther = byText(m, 'div', /^Add Other$/);
+check('the Add Other row is there', !!addOther);
+clickEl(addOther);
+
+const otherInput = [...m.host.querySelectorAll('input')].find((i) => /Type here/.test(i.placeholder || ''));
+check('an empty free-text row appears', !!otherInput);
+
+if (otherInput) {
+  const setter = Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value').set;
+  for (const partial of ['N', 'Ne', 'New', 'New c', 'New cv']) {
+    act(() => {
+      setter.call(otherInput, partial);
+      otherInput.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+    });
+  }
+  const got = m.state().chiefComplaint;
+  check('typing five characters leaves ONE value, not five',
+    Array.isArray(got) && got.length === 1, got);
+  check('...and it is the whole thing that was typed',
+    Array.isArray(got) && got[0] === 'New cv', got);
+  // The chip box must agree: one chip, not a trail of prefixes.
+  check('...and the field shows one chip',
+    (m.html().match(/New cv/g) || []).length >= 1 && !/>N<|>Ne</.test(m.html()), got);
+}
+m.unmount();
+
+// The option list handed to a MultiSelect must never contain the live value.
+m = mount(defaultConfig(), { cform: { ...baseCform(), chiefComplaint: ['Halfway typed'] } });
+openPicker(m, 'Chief complaint');
+const tickable = [...m.host.querySelectorAll('span')]
+  .map((el) => (el.childElementCount === 0 ? (el.textContent || '').trim() : ''))
+  .filter(Boolean);
+check('a free-text value is not offered back as a tickable option',
+  !tickable.includes('Halfway typed'), tickable.filter((t) => /Halfway/.test(t)));
+// It is still kept — as a free-text row, which is how MultiSelect has always
+// held values outside its list, and why it needs no help from the config.
+check('...but the visit still holds it', /Halfway typed/.test(m.html()));
+m.unmount();
+
+/* ══ Deleting a medicine from the list row ════════════════════════════
+   The row itself opens the editor when clicked, and deleting cannot be
+   undone, so the two things worth pinning are that the bin does not delete
+   on the first press and does not open the editor instead. */
+
+function mountMeds({ medicines = LIBRARY, onDelete = async () => {}, onSave = async () => {} } = {}) {
+  const host = dom.window.document.createElement('div');
+  dom.window.document.body.appendChild(host);
+  const root = createRoot(host);
+  act(() => {
+    root.render(h(MedicinesTab, {
+      config: defaultConfig(), medicines, onSave, onDelete, onToast() {},
+    }));
+  });
+  return { host, unmount: () => act(() => root.unmount()) };
+}
+
+const binFor = (mm, name) => [...mm.host.querySelectorAll('button')]
+  .find((b) => (b.getAttribute('aria-label') || '') === 'Delete ' + name);
+
+let md = mountMeds();
+check('every row has a delete button', !!binFor(md, 'Amoxicillin 500mg') && !!binFor(md, 'Ibuprofen 400mg'));
+check('...labelled for assistive tech', binFor(md, 'Amoxicillin 500mg').getAttribute('title') === 'Delete Amoxicillin 500mg');
+md.unmount();
+
+const deleted = [];
+md = mountMeds({ onDelete: async (id) => { deleted.push(id); } });
+clickEl(binFor(md, 'Amoxicillin 500mg'));
+check('one press does NOT delete', deleted.length === 0, deleted);
+check('...it asks first', /Delete\?/.test(md.host.textContent || ''));
+// Clicking the row opens the editor; the bin must not do that instead.
+check('...and does not open the editor', !/Edit medicine/.test(md.host.textContent || ''));
+
+clickEl([...md.host.querySelectorAll('button')].find((b) => (b.textContent || '').trim() === 'Cancel'));
+check('cancel backs out', !/Delete\?/.test(md.host.textContent || '') && deleted.length === 0);
+
+clickEl(binFor(md, 'Amoxicillin 500mg'));
+const confirmBtn = [...md.host.querySelectorAll('button')].find((b) => (b.textContent || '').trim() === 'Delete');
+check('the confirm button is there', !!confirmBtn);
+await act(async () => { confirmBtn.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })); });
+check('confirming deletes that medicine', deleted.join() === 'm1', deleted);
+check('...and only that one', deleted.length === 1);
+md.unmount();
+
+// Only one row can be asking at a time.
+md = mountMeds();
+clickEl(binFor(md, 'Amoxicillin 500mg'));
+clickEl(binFor(md, 'Ibuprofen 400mg'));
+check('asking on a second row cancels the first',
+  (md.host.textContent.match(/Delete\?/g) || []).length === 1,
+  (md.host.textContent.match(/Delete\?/g) || []).length);
+md.unmount();
+
+// A failure must say so rather than pretend the medicine went.
+md = mountMeds({ onDelete: async () => { throw new Error('network'); } });
+clickEl(binFor(md, 'Amoxicillin 500mg'));
+await act(async () => {
+  [...md.host.querySelectorAll('button')].find((b) => (b.textContent || '').trim() === 'Delete')
+    .dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+});
+check('a failed delete leaves the medicine in the list', /Amoxicillin 500mg/.test(md.host.textContent || ''));
+md.unmount();
 
 
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -1131,9 +1131,21 @@ export default function Clinical({
   // recorded a value for it still shows it — otherwise opening an old visit
   // drops the value from the form and the next save writes it away.
   const showField = (k) => fieldVisible(formCfg, cform, k);
-  // Old visits keep their values: a treatment recorded before it was hidden is
-  // still offered while that visit is open, so opening it cannot blank the field.
-  const optsFor = (key, current) => valuesForVisit(formCfg, key, current);
+  // Two different needs, and conflating them was a bug.
+  //
+  // MultiSelect already keeps any value that is not in its option list, as a
+  // free-text chip — that is how "Other" works — so an old visit's hidden
+  // value survives without help. Widening its options with the LIVE value is
+  // actively harmful: while the doctor types into the Other box every
+  // keystroke emits a longer partial, and adding that partial to the options
+  // promotes it from a draft into a standard selected option, which the next
+  // keystroke can no longer replace. Typing "New" left behind N, Ne and New.
+  const pickOpts = (key) => enabledValues(formCfg, key);
+
+  // A native <select> has no such fallback: a value that matches no option
+  // renders blank, and saving then writes the blank back. These do need the
+  // visit's own value folded in.
+  const selectOpts = (key, current) => valuesForVisit(formCfg, key, current);
 
   const medicines = cform.medicines || [];
   const paySplits = cform.paySplits || [];
@@ -1450,7 +1462,7 @@ export default function Clinical({
             </div>}
             <div>
               <label style={labelStyle}>Chief complaint</label>
-              <MultiSelect value={cform.chiefComplaint} options={optsFor('chiefComplaint', cform.chiefComplaint)} onChange={(v) => onSetField('chiefComplaint', v)} placeholder="Select…" disabled={readOnly} allowOther searchable />
+              <MultiSelect value={cform.chiefComplaint} options={pickOpts('chiefComplaint')} onChange={(v) => onSetField('chiefComplaint', v)} placeholder="Select…" disabled={readOnly} allowOther searchable />
             </div>
             {showField('description') && <div>
               <label style={labelStyle}>Description</label>
@@ -1462,7 +1474,7 @@ export default function Clinical({
             </div>}
             {showField('advised') && <div>
               <label style={labelStyle}>Advised treatment</label>
-              <MultiSelect value={cform.advisedTreatment} options={optsFor('advised', cform.advisedTreatment)} onChange={(v) => onSetField('advisedTreatment', v)} placeholder="Select…" disabled={readOnly} allowOther searchable />
+              <MultiSelect value={cform.advisedTreatment} options={pickOpts('advised')} onChange={(v) => onSetField('advisedTreatment', v)} placeholder="Select…" disabled={readOnly} allowOther searchable />
             </div>}
             {showField('advised') && <div style={{ gridColumn: '1 / -1' }}>
               <label style={{ ...labelStyle, marginBottom: 4 }}>Tooth number <span style={{ color: '#98b0ab', fontWeight: 400 }}>— per advised treatment</span></label>
@@ -1481,14 +1493,14 @@ export default function Clinical({
             </div>}
             {showField('treatmentGroup') && <div>
               <label style={labelStyle}>Treatment group</label>
-              <MultiSelect value={cform.treatmentGroup} options={optsFor('treatmentGroup', cform.treatmentGroup)} onChange={(v) => onSetField('treatmentGroup', v)} placeholder="Select…" disabled={readOnly} allowOther searchable />
+              <MultiSelect value={cform.treatmentGroup} options={pickOpts('treatmentGroup')} onChange={(v) => onSetField('treatmentGroup', v)} placeholder="Select…" disabled={readOnly} allowOther searchable />
             </div>}
             {showField('treatment') && <div>
               <label style={labelStyle}>Current treatment</label>
               {/* toothNumber is derived from the selected treatments, so it must be
                   recomputed when a treatment is added or removed, not only when a
                   tooth is tagged. */}
-              <MultiSelect value={cform.treatment} options={optsFor('treatment', cform.treatment)} onChange={(v) => { onSetField('treatment', v); onSetField('toothNumber', deriveToothNumber(v, cform.treatmentTeeth)); }} placeholder="Select…" disabled={readOnly} allowOther searchable />
+              <MultiSelect value={cform.treatment} options={pickOpts('treatment')} onChange={(v) => { onSetField('treatment', v); onSetField('toothNumber', deriveToothNumber(v, cform.treatmentTeeth)); }} placeholder="Select…" disabled={readOnly} allowOther searchable />
             </div>}
             {showField('treatment') && (Array.isArray(cform.treatment) ? cform.treatment : []).some(t => /Other/.test(t)) && (
               <div style={{ gridColumn: '1 / -1' }}>
@@ -1553,7 +1565,7 @@ export default function Clinical({
                         <div>
                           <label style={{ display: 'block', fontWeight: 700, fontSize: 12.5, marginBottom: 6 }}>Form</label>
                           <select value={m.unit} onChange={(e) => setMed(i, 'unit', e.target.value)} style={{ width: '100%', padding: '11px 13px', border: '1px solid #d6e7e3', borderRadius: 10, fontSize: 14.5, background: '#fff' }}>
-                            {optsFor('medType', m.unit).map((u) => <option key={u} value={u}>{u}</option>)}
+                            {selectOpts('medType', m.unit).map((u) => <option key={u} value={u}>{u}</option>)}
                           </select>
                         </div>
                         <div>

@@ -15,6 +15,10 @@ export default function MedicinesTab({ config, medicines, onSave, onDelete, onTo
   const [draft, setDraft] = useState(null);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
+  // Which row is asking "are you sure". Deleting is not undoable and the row
+  // itself opens the editor when clicked, so a bare ✕ sitting next to that
+  // is one mis-tap away from losing a medicine.
+  const [confirmId, setConfirmId] = useState('');
   const [pq, setPq] = useState('');
   const [picked, setPicked] = useState(null);
   const isMobile = useIsMobile();
@@ -48,6 +52,23 @@ export default function MedicinesTab({ config, medicines, onSave, onDelete, onTo
       setErr(String((e && e.message) || 'Could not delete that medicine.'));
     } finally {
       setBusy(false);
+    }
+  }
+
+  // Delete straight from the row. Separate from remove() because there is no
+  // editor open to show an error in, so a failure has to go to the toast.
+  async function removeRow(med) {
+    setBusy(true);
+    try {
+      await onDelete(med.id);
+      // The editor may be open on the row that just went.
+      setDraft((d) => (d && d.id === med.id ? null : d));
+      onToast('Deleted “' + med.name + '”');
+    } catch (e) {
+      onToast(String((e && e.message) || 'Could not delete that medicine.'));
+    } finally {
+      setBusy(false);
+      setConfirmId('');
     }
   }
 
@@ -210,9 +231,52 @@ export default function MedicinesTab({ config, medicines, onSave, onDelete, onTo
               <span style={{ display: 'block', fontSize: 12, color: '#8a5b2a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.remarks}</span>
             )}
           </span>
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={FAINT} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-            <path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" />
-          </svg>
+          {confirmId === m.id ? (
+            <span
+              onClick={(e) => e.stopPropagation()}
+              style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, flexWrap: 'wrap' }}
+            >
+              <span style={{ fontSize: 12.5, color: '#8a2c1b', fontWeight: 700 }}>Delete?</span>
+              <button type="button" onClick={() => setConfirmId('')} style={{ ...ghostBtn, padding: '6px 11px', fontSize: 12.5, minHeight: 34 }}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => removeRow(m)}
+                disabled={busy}
+                style={{
+                  padding: '6px 12px', borderRadius: 9, border: 0, minHeight: 34,
+                  background: '#b3261e', color: '#fff', fontWeight: 700, fontSize: 12.5,
+                  cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.65 : 1,
+                }}
+              >
+                {busy ? 'Deleting…' : 'Delete'}
+              </button>
+            </span>
+          ) : (
+            <span style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+              <span title="Edit" style={{ display: 'flex', width: 32, height: 32, alignItems: 'center', justifyContent: 'center' }}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={FAINT} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" />
+                </svg>
+              </span>
+              <button
+                type="button"
+                title={'Delete ' + m.name}
+                aria-label={'Delete ' + m.name}
+                onClick={(e) => { e.stopPropagation(); setConfirmId(m.id); }}
+                style={{
+                  width: 32, height: 32, borderRadius: 8, border: '1px solid #f0d9d3',
+                  background: '#fff', color: '#b3261e', cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14" />
+                </svg>
+              </button>
+            </span>
+          )}
         </div>
       ))}
       {shown.length === 0 && (
