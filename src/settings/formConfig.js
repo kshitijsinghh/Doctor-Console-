@@ -483,3 +483,15 @@ export function newMedicinesFrom(rows, library) {
   });
   return out;
 }
+
+// The fields a prescription actually prints. Used to decide whether there is
+// anything worth generating — a sheet carrying only the clinic letterhead and
+// the patient's name is not a prescription.
+export const PRESCRIPTION_FIELDS = [
+  'medicalHistory', 'chiefComplaint', 'description', 'diagnosis', 'investigation',
+  'treatmentGroup', 'treatment', 'advised', 'medicine', 'comments',
+];
+
+export function hasClinicalContent(cform) {
+  return PRESCRIPTION_FIELDS.some((k) => fieldHasValue(cform, k));
+}

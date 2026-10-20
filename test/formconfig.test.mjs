@@ -12,7 +12,7 @@ import {
   medSummary, medMatches, medSuggestions, validateMedicine, searchMedicines,
   medToRow, medAbbr, emptyMedicine,
   fieldHasValue, fieldVisible, fieldKeptForVisit, newMedicinesFrom, MIN_LEARNABLE_NAME,
-  titleCaseValue,
+  titleCaseValue, hasClinicalContent, PRESCRIPTION_FIELDS,
 } from '../src/settings/formConfig.js';
 import { CHIEF_COMPLAINTS, TREATMENTS, TREATMENT_GROUPS, MEDICINE_FORMS } from '../src/options.js';
 
@@ -366,6 +366,43 @@ check('a built-in is still matched case-insensitively',
 // A built-in typed in lower case must not be re-added as a capitalised copy.
 check('...and typing "composite restoration" does not create a second entry',
   /already in this list/.test(addValue(defaultConfig(), 'treatment', 'composite restoration').error));
+
+/* ══ Is there anything to put on a prescription? ══════════════════════ */
+
+const BLANK = {
+  medicalHistory: '', chiefDescription: '', diagnosis: '', investigation: '', comments: '',
+  chiefComplaint: [], advisedTreatment: [], treatment: [], treatmentGroup: [],
+  treatmentTeeth: {}, advisedTeeth: {}, medicines: [], documents: [],
+};
+
+check('an untouched form has nothing to print', hasClinicalContent(BLANK) === false);
+check('...and neither does a missing one', hasClinicalContent(null) === false);
+check('...nor one holding only whitespace',
+  hasClinicalContent({ ...BLANK, diagnosis: '   ', medicalHistory: '\t' }) === false);
+// A blank row appears the moment Add medicine is pressed.
+check('...nor one with an empty medicine row',
+  hasClinicalContent({ ...BLANK, medicines: [{ name: '', unit: 'Tablet', food: 'After Food' }] }) === false);
+
+check('a chief complaint is enough', hasClinicalContent({ ...BLANK, chiefComplaint: ['Pain'] }));
+check('a diagnosis is enough', hasClinicalContent({ ...BLANK, diagnosis: 'Irreversible pulpitis' }));
+check('a medical history is enough', hasClinicalContent({ ...BLANK, medicalHistory: 'Diabetic' }));
+check('an investigation is enough', hasClinicalContent({ ...BLANK, investigation: 'IOPA' }));
+check('a description is enough', hasClinicalContent({ ...BLANK, chiefDescription: 'Since Tuesday' }));
+check('a treatment is enough', hasClinicalContent({ ...BLANK, treatment: ['RCT'] }));
+check('an advised treatment is enough', hasClinicalContent({ ...BLANK, advisedTreatment: ['Crown'] }));
+check('a treatment group is enough', hasClinicalContent({ ...BLANK, treatmentGroup: ['Endodontics'] }));
+check('a named medicine is enough', hasClinicalContent({ ...BLANK, medicines: [{ name: 'Ibuprofen 400mg' }] }));
+check('a comment is enough', hasClinicalContent({ ...BLANK, comments: 'Called to confirm' }));
+check('tooth tags alone are enough', hasClinicalContent({ ...BLANK, treatmentTeeth: { RCT: ['11'] } }));
+
+// Billing is step 2 and does not appear on a prescription.
+check('billing alone is NOT enough to print a prescription',
+  hasClinicalContent({ ...BLANK, treatmentCost: '500', amountPaid: '500', paymentMode: 'UPI' }) === false);
+check('a document alone is not either',
+  hasClinicalContent({ ...BLANK, documents: [{ name: 'xray.png' }] }) === false);
+check('every prescription field is one the form knows about',
+  PRESCRIPTION_FIELDS.every((k) => FIELD_KEYS.includes(k)),
+  PRESCRIPTION_FIELDS.filter((k) => !FIELD_KEYS.includes(k)));
 
 
 console.log(`\n${pass} passed, ${fail} failed`);

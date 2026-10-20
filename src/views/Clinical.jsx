@@ -10,7 +10,7 @@ import NextAppointmentNotice from '../whatsapp/NextAppointmentNotice';
 import { useIsPhone, toMinutes } from '../whatsapp/ui';
 import { anyHealthDetails, hasRealAllergy, healthRows } from '../health';
 import { useFormConfig } from '../settings/FormConfigContext';
-import { fieldVisible, enabledValues, valuesForVisit, medToRow, newMedicinesFrom } from '../settings/formConfig';
+import { fieldVisible, enabledValues, valuesForVisit, medToRow, newMedicinesFrom, hasClinicalContent } from '../settings/formConfig';
 import MedicinePicker from '../settings/MedicinePicker';
 
 // Rasterize a server-generated HTML document (fetched from its URL) into a jsPDF instance.
@@ -1189,6 +1189,10 @@ export default function Clinical({
   // visit's own value folded in.
   const selectOpts = (key, current) => valuesForVisit(formCfg, key, current);
 
+  // Nothing recorded yet means nothing to print: a prescription carrying only
+  // the letterhead and the patient's name is not a prescription.
+  const rxReady = hasClinicalContent(cform);
+
   const medicines = cform.medicines || [];
   const paySplits = cform.paySplits || [];
   const documents = cform.documents || [];
@@ -1653,7 +1657,19 @@ export default function Clinical({
                   Add medicine
                 </button>
                 )}
-                <button onClick={() => setRxOpen(true)} style={{ padding: '10px 16px', borderRadius: 10, border: '1px solid #cfe3df', background: '#fff', color: '#0e756c', fontWeight: 700, fontSize: 13.5, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+                {/* Saving first is the whole point: a prescription gets
+                    generated, sent and forgotten, and the visit was never
+                    written. The sheet opens either way — a failed sheet write
+                    must not stand between a patient and their prescription —
+                    and onSaveAndNext puts the error in the form behind it. */}
+                <button
+                  onClick={async () => {
+                    if (onSaveAndNext) { try { await onSaveAndNext(); } catch { /* reported in the form */ } }
+                    setRxOpen(true);
+                  }}
+                  disabled={saving || !rxReady}
+                  title={rxReady ? 'Saves the form, then opens the prescription' : 'Fill in the form first — there is nothing to put on a prescription yet'}
+                  style={{ padding: '10px 16px', borderRadius: 10, border: '1px solid ' + (rxReady ? '#cfe3df' : '#e4edeb'), background: rxReady ? '#fff' : '#f2f7f6', color: rxReady ? '#0e756c' : '#a8bdb9', fontWeight: 700, fontSize: 13.5, cursor: (saving || !rxReady) ? 'not-allowed' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: 7 }}>
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7z"/><path d="M14 2v5h5M9 13h6M9 17h4"/></svg>
                   Generate e-prescription
                 </button>

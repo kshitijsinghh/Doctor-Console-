@@ -765,6 +765,59 @@ check('with the prescription on, everything is present',
   && /Generate e-prescription/.test(m.text()) && /Save and Next/.test(m.text()));
 m.unmount();
 
+/* ══ Generate e-prescription: saves first, and is off when empty ══════ */
+
+const rxBtn = (mm) => [...mm.host.querySelectorAll('button')]
+  .find((b) => /Generate e-prescription/.test(b.textContent || ''));
+
+m = mount(defaultConfig());
+check('on an empty form the prescription button is disabled', rxBtn(m).disabled === true);
+check('...and says why', /nothing to put on a prescription/.test(rxBtn(m).getAttribute('title') || ''),
+  rxBtn(m).getAttribute('title'));
+clickEl(rxBtn(m));
+check('...and clicking it opens nothing', !/Prescription|E-Prescription/.test(m.text()));
+m.unmount();
+
+m = mount(defaultConfig(), { cform: { ...baseCform(), diagnosis: 'Irreversible pulpitis' } });
+check('one filled field enables it', rxBtn(m).disabled === false);
+check('...and the title explains what it will do',
+  /Saves the form/.test(rxBtn(m).getAttribute('title') || ''), rxBtn(m).getAttribute('title'));
+m.unmount();
+
+// Billing is step 2 and is not printed, so it must not enable the button.
+m = mount(defaultConfig(), { cform: { ...baseCform(), treatmentCost: '500' } });
+check('billing alone leaves it disabled', rxBtn(m).disabled === true);
+m.unmount();
+
+// The point of the change: the visit is written before the sheet opens.
+const order = [];
+m = mount(defaultConfig(), {
+  cform: { ...baseCform(), diagnosis: 'Irreversible pulpitis' },
+  props: { onSaveAndNext: async () => { order.push('saved'); } },
+});
+await act(async () => {
+  rxBtn(m).dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+});
+check('generating saves the form first', order.join() === 'saved', order);
+check('...and then opens the prescription', /Prescription/i.test(m.text()));
+m.unmount();
+
+// A failed save must not stand between a patient and their prescription.
+m = mount(defaultConfig(), {
+  cform: { ...baseCform(), diagnosis: 'Irreversible pulpitis' },
+  props: { onSaveAndNext: async () => { throw new Error('sheet down'); } },
+});
+await act(async () => {
+  rxBtn(m).dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+});
+check('a failed save still opens the prescription', /Prescription/i.test(m.text()));
+m.unmount();
+
+// Nothing should fire twice while a save is in flight.
+m = mount(defaultConfig(), { cform: { ...baseCform(), diagnosis: 'X' }, props: { saving: true } });
+check('the button is disabled while a save is already running', rxBtn(m).disabled === true);
+m.unmount();
+
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
