@@ -636,6 +636,92 @@ await act(async () => {
 check('a failed delete leaves the medicine in the list', /Amoxicillin 500mg/.test(md.host.textContent || ''));
 md.unmount();
 
+/* ══ A draft keeps its text even once it spells an existing option ═════
+   Typing "RCT New" used to stop dead at "RCT": that text named a standard
+   option, so the row was reclassified, the input vanished mid-word and the
+   rest of the name could not be typed. */
+
+function typeOther(mm, label, text, { perChar = true } = {}) {
+  openPicker(mm, label);
+  const add = byText(mm, 'div', /^Add Other$/);
+  clickEl(add);
+  const input = [...mm.host.querySelectorAll('input')].find((i) => /Type here/.test(i.placeholder || ''));
+  if (!input) throw new Error('no free-text row');
+  const setter = Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value').set;
+  const steps = perChar ? text.split('').map((_, i) => text.slice(0, i + 1)) : [text];
+  for (const partial of steps) {
+    act(() => {
+      setter.call(input, partial);
+      input.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+    });
+  }
+  return input;
+}
+
+m = mount(defaultConfig());
+let input = typeOther(m, 'Current treatment', 'RCT New');
+check('the input survives passing through an exact option name', !!input.isConnected, 'input was removed');
+check('...and still holds everything typed', input.value === 'RCT New', input.value);
+check('the value is the full free-text entry, not the option it passed through',
+  m.state().treatment.join() === 'RCT New', m.state().treatment);
+m.unmount();
+
+// Longer, and through an option name that is a prefix of another option.
+m = mount(defaultConfig());
+input = typeOther(m, 'Current treatment', 'Crown Lengthening');
+check('a name extending an existing option types through',
+  input.value === 'Crown Lengthening' && m.state().treatment.join() === 'Crown Lengthening',
+  { typed: input.value, value: m.state().treatment });
+m.unmount();
+
+// Typing exactly an option and leaving the box settles it into a tick.
+m = mount(defaultConfig());
+input = typeOther(m, 'Current treatment', 'RCT');
+check('typing an exact option name still holds it as a draft while focused',
+  input.isConnected && input.value === 'RCT');
+act(() => { input.dispatchEvent(new dom.window.FocusEvent('focusout', { bubbles: true })); });
+check('...and settles to the option itself on blur', m.state().treatment.join() === 'RCT', m.state().treatment);
+check('...with the free-text row gone',
+  ![...m.host.querySelectorAll('input')].some((i) => /Type here/.test(i.placeholder || '') && i.value === 'RCT'));
+m.unmount();
+
+// Enter settles too, and must not leave a duplicate behind.
+m = mount(defaultConfig());
+input = typeOther(m, 'Current treatment', 'RCT');
+act(() => { input.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); });
+check('Enter settles an exact match', m.state().treatment.join() === 'RCT', m.state().treatment);
+check('...exactly once', m.state().treatment.filter((v) => v === 'RCT').length === 1, m.state().treatment);
+m.unmount();
+
+// A genuine free-text value must not be swallowed on blur.
+m = mount(defaultConfig());
+input = typeOther(m, 'Current treatment', 'RCT New');
+act(() => { input.dispatchEvent(new dom.window.FocusEvent('focusout', { bubbles: true })); });
+check('a free-text value survives blur unchanged', m.state().treatment.join() === 'RCT New', m.state().treatment);
+m.unmount();
+
+// Ticking an option and then typing a name that starts with it.
+m = mount(defaultConfig(), { cform: { ...baseCform(), treatment: ['Crown'] } });
+input = typeOther(m, 'Current treatment', 'Crown Lengthening');
+check('an already-ticked option is not disturbed by a draft that extends it',
+  m.state().treatment.includes('Crown') && m.state().treatment.includes('Crown Lengthening'),
+  m.state().treatment);
+check('...and neither is duplicated',
+  m.state().treatment.filter((v) => v === 'Crown').length === 1, m.state().treatment);
+m.unmount();
+
+// Removing the chip for a draft whose text spells an option must remove the
+// row, not toggle the option.
+m = mount(defaultConfig());
+input = typeOther(m, 'Current treatment', 'RCT');
+const chipX = [...m.host.querySelectorAll('span')]
+  .filter((el) => (el.textContent || '').trim() === '×' || (el.textContent || '').trim() === '×').pop();
+if (chipX) {
+  clickEl(chipX);
+  check('removing the chip clears the value', (m.state().treatment || []).join() === '', m.state().treatment);
+}
+m.unmount();
+
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

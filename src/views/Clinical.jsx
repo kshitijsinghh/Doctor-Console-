@@ -178,45 +178,85 @@ export function MultiSelect({ value, options, onChange, placeholder, disabled, a
   const [search, setSearch] = useState('');
   const arr = Array.isArray(value) ? value : (value ? String(value).split(', ').filter(Boolean) : []);
   const stdOptions = allowOther ? options.filter((o) => o !== 'Other') : options;
-  const stdSelected = arr.filter((t) => stdOptions.includes(t));
 
   // Free-text entries are simply array items that are not one of the preset
   // options — the stored shape already supports any number of them. They are
   // held in local state while being typed so a half-typed entry never reaches
   // the record, and an empty row can exist in the UI without creating a blank
   // chip.
-  const customsFromValue = allowOther ? arr.filter((t) => !stdOptions.includes(t)) : [];
-  const [drafts, setDrafts] = useState(customsFromValue);
+  // The selection has two halves that a flat array of strings cannot tell
+  // apart: options the doctor ticked, and free text they typed. Both are held
+  // here and reconciled with the value only when it changes from outside.
+  //
+  // Deriving them from the value instead is what broke typing. "RCT" typed on
+  // the way to "RCT New" read back as the standard option RCT, so the row was
+  // reclassified, the input vanished mid-word, and the rest of the name could
+  // not be typed. Deriving them also meant a draft passing through the text of
+  // an already-ticked option quietly consumed that tick.
+  const customsOf = (list) => (allowOther ? list.filter((t) => !stdOptions.includes(t)) : []);
+  const pickedOf = (list) => list.filter((t) => stdOptions.includes(t));
 
-  // Resync when the value changes from outside (a different visit is loaded).
-  // Skipped when our own edit produced the change, so typing is not clobbered.
-  const externalKey = customsFromValue.join('\u0000');
-  const draftKey = drafts.filter((d) => d.trim()).join('\u0000');
+  const [drafts, setDrafts] = useState(() => customsOf(arr));
+  const [picked, setPicked] = useState(() => pickedOf(arr));
+
+  const draftTexts = drafts.map((d) => d.trim()).filter(Boolean);
+  const stdSelected = allowOther ? picked : arr;
+
+  // Resync only on a change we did not cause — a different visit loaded.
+  const emittedRef = useRef(null);
+  const valueKey = arr.join('\u0000');
   useEffect(() => {
-    if (externalKey !== draftKey) setDrafts(customsFromValue);
+    if (valueKey === emittedRef.current) return;
+    setDrafts(customsOf(arr));
+    setPicked(pickedOf(arr));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [externalKey]);
+  }, [valueKey]);
 
-  const displayChips = allowOther ? [...stdSelected, ...drafts.filter((d) => d.trim())] : arr;
+  // A draft whose text spells a ticked option is one chip, not two.
+  const displayChips = allowOther
+    ? [...picked, ...draftTexts.filter((t) => !picked.includes(t))]
+    : arr;
 
-  function emit(std, nextDrafts) {
-    onChange([...std, ...nextDrafts.filter((d) => d.trim())]);
+  function emit(nextPicked, nextDrafts) {
+    const out = [];
+    [...nextPicked, ...nextDrafts.map((d) => d.trim()).filter(Boolean)]
+      .forEach((v) => { if (!out.includes(v)) out.push(v); });
+    emittedRef.current = out.join('\u0000');
+    onChange(out);
   }
-  function setDrafted(next) { setDrafts(next); emit(stdSelected, next); }
+  function setDrafted(next) { setDrafts(next); emit(picked, next); }
   function addOther() { setDrafts([...drafts, '']); }
   function setOtherAt(i, text) { setDrafted(drafts.map((d, x) => (x === i ? text : d))); }
   function removeOtherAt(i) { setDrafted(drafts.filter((_, x) => x !== i)); }
 
+  // Once the doctor leaves the box, a row whose text exactly names an option
+  // becomes that option: the row goes and the list shows it ticked. On blur
+  // and Enter rather than per keystroke — that timing is the whole fix.
+  function settleOther(i) {
+    const text = (drafts[i] || '').trim();
+    if (!text || !stdOptions.includes(text)) return;
+    const nextDrafts = drafts.filter((_, x) => x !== i);
+    const nextPicked = picked.includes(text) ? picked : [...picked, text];
+    setDrafts(nextDrafts);
+    setPicked(nextPicked);
+    emit(nextPicked, nextDrafts);
+  }
+
   function toggle(opt) {
-    const base = allowOther ? stdSelected : arr;
-    const next = base.includes(opt) ? base.filter((s) => s !== opt) : [...base, opt];
-    if (allowOther) emit(next, drafts); else onChange(next);
+    if (!allowOther) {
+      onChange(arr.includes(opt) ? arr.filter((s) => s !== opt) : [...arr, opt]);
+      return;
+    }
+    const next = picked.includes(opt) ? picked.filter((s) => s !== opt) : [...picked, opt];
+    setPicked(next);
+    emit(next, drafts);
   }
   function removeChip(chip) {
-    if (allowOther && !stdOptions.includes(chip)) {
-      const i = drafts.findIndex((d) => d === chip);
-      if (i >= 0) removeOtherAt(i);
-      return;
+    // Drafts first: a typed row whose text spells an option must be removed as
+    // the row it is, not toggled as the option it resembles.
+    if (allowOther) {
+      const i = drafts.findIndex((d) => d.trim() === chip);
+      if (i >= 0) { removeOtherAt(i); return; }
     }
     toggle(chip);
   }
@@ -265,6 +305,8 @@ export function MultiSelect({ value, options, onChange, placeholder, disabled, a
                       value={d}
                       onChange={(e) => setOtherAt(i, e.target.value)}
                       onClick={(e) => e.stopPropagation()}
+                      onBlur={() => settleOther(i)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); settleOther(i); } }}
                       placeholder="Type here…"
                       autoFocus={i === drafts.length - 1 && d === ''}
                       style={{ flex: 1, padding: '8px 10px', border: '1px solid #d6e7e3', borderRadius: 8, fontSize: 14, background: '#fff' }}
