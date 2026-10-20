@@ -12,7 +12,7 @@ import {
   medSummary, medMatches, medSuggestions, validateMedicine, searchMedicines,
   medToRow, medAbbr, emptyMedicine,
   fieldHasValue, fieldVisible, fieldKeptForVisit, newMedicinesFrom, MIN_LEARNABLE_NAME,
-  titleCaseValue, hasClinicalContent, PRESCRIPTION_FIELDS,
+  titleCaseValue, hasClinicalContent, PRESCRIPTION_FIELDS, formFingerprint,
 } from '../src/settings/formConfig.js';
 import { CHIEF_COMPLAINTS, TREATMENTS, TREATMENT_GROUPS, MEDICINE_FORMS } from '../src/options.js';
 
@@ -403,6 +403,30 @@ check('a document alone is not either',
 check('every prescription field is one the form knows about',
   PRESCRIPTION_FIELDS.every((k) => FIELD_KEYS.includes(k)),
   PRESCRIPTION_FIELDS.filter((k) => !FIELD_KEYS.includes(k)));
+
+/* ══ Telling an untouched form from an edited one ═════════════════════ */
+
+const F = formFingerprint;
+
+check('the same form fingerprints the same', F({ a: 1, b: [2, 3] }) === F({ a: 1, b: [2, 3] }));
+// JSON.stringify follows insertion order, so without sorting a clean form
+// rebuilt by another route would look edited and save again for nothing.
+check('key order does not matter', F({ a: 1, b: 2 }) === F({ b: 2, a: 1 }));
+check('...at every level', F({ x: { a: 1, b: 2 } }) === F({ x: { b: 2, a: 1 } }));
+// Array order IS part of the record: the order of treatments is meaningful.
+check('array order DOES matter', F({ t: ['RCT', 'Crown'] }) !== F({ t: ['Crown', 'RCT'] }));
+check('a changed value shows up', F({ a: 1 }) !== F({ a: 2 }));
+check('a cleared field shows up', F({ a: 'x' }) !== F({ a: '' }));
+check('an added field shows up', F({ a: 1 }) !== F({ a: 1, b: 2 }));
+check('"1" and 1 are different', F({ a: '1' }) !== F({ a: 1 }));
+check('null and undefined agree', F({ a: null }) === F({ a: undefined }));
+check('empty and missing containers differ', F({ a: [] }) !== F({}));
+check('nested edits show up',
+  F({ m: [{ name: 'A', night: false }] }) !== F({ m: [{ name: 'A', night: true }] }));
+check('deeply equal forms match',
+  F({ treatmentTeeth: { RCT: ['11', '12'] }, medicines: [{ name: 'A' }] })
+  === F({ medicines: [{ name: 'A' }], treatmentTeeth: { RCT: ['11', '12'] } }));
+check('null and empty are both safe', F(null) === 'null' && typeof F(undefined) === 'string');
 
 
 console.log(`\n${pass} passed, ${fail} failed`);

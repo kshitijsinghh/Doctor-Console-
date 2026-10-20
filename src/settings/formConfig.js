@@ -495,3 +495,23 @@ export const PRESCRIPTION_FIELDS = [
 export function hasClinicalContent(cform) {
   return PRESCRIPTION_FIELDS.some((k) => fieldHasValue(cform, k));
 }
+
+// A stable fingerprint of the form, for telling "already saved and untouched"
+// from "edited since the last save".
+//
+// JSON.stringify alone will not do: its output follows key insertion order, so
+// two identical forms built by different routes can produce different strings
+// and a clean form would look dirty. Keys are sorted at every level; arrays
+// keep their order, because the order of treatments or medicines is itself
+// part of the record.
+export function formFingerprint(value) {
+  const walk = (v) => {
+    if (v === undefined || v === null) return 'null';
+    if (typeof v !== 'object') return JSON.stringify(v);
+    if (Array.isArray(v)) return '[' + v.map(walk).join(',') + ']';
+    return '{' + Object.keys(v).sort()
+      .map((k) => JSON.stringify(k) + ':' + walk(v[k]))
+      .join(',') + '}';
+  };
+  return walk(value);
+}

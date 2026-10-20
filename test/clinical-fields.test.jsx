@@ -775,7 +775,7 @@ check('on an empty form the prescription button is disabled', rxBtn(m).disabled 
 check('...and says why', /nothing to put on a prescription/.test(rxBtn(m).getAttribute('title') || ''),
   rxBtn(m).getAttribute('title'));
 clickEl(rxBtn(m));
-check('...and clicking it opens nothing', !/Prescription|E-Prescription/.test(m.text()));
+check('...and clicking it opens nothing', !m.host.querySelector('[aria-label="Close"]'));
 m.unmount();
 
 m = mount(defaultConfig(), { cform: { ...baseCform(), diagnosis: 'Irreversible pulpitis' } });
@@ -789,7 +789,7 @@ m = mount(defaultConfig(), { cform: { ...baseCform(), treatmentCost: '500' } });
 check('billing alone leaves it disabled', rxBtn(m).disabled === true);
 m.unmount();
 
-// The point of the change: the visit is written before the sheet opens.
+// The point of the change: generating writes the visit.
 const order = [];
 m = mount(defaultConfig(), {
   cform: { ...baseCform(), diagnosis: 'Irreversible pulpitis' },
@@ -798,8 +798,24 @@ m = mount(defaultConfig(), {
 await act(async () => {
   rxBtn(m).dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
 });
-check('generating saves the form first', order.join() === 'saved', order);
-check('...and then opens the prescription', /Prescription/i.test(m.text()));
+check('generating saves the form', order.join() === 'saved', order);
+check('...and opens the prescription', !!m.host.querySelector('[aria-label="Close"]'));
+m.unmount();
+
+// ...but does not wait for it. A save that never comes back must not hold the
+// prescription hostage: an Apps Script write is a multi-second round trip and
+// the sheet is rendered from the form, not from the response.
+let released;
+const hanging = new Promise((r) => { released = r; });
+m = mount(defaultConfig(), {
+  cform: { ...baseCform(), diagnosis: 'Irreversible pulpitis' },
+  props: { onSaveAndNext: () => hanging },
+});
+act(() => { rxBtn(m).dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })); });
+check('a save still in flight does not delay the prescription',
+  !!m.host.querySelector('[aria-label="Close"]'), 'pop-up did not open');
+released();
+await act(async () => { await Promise.resolve(); });
 m.unmount();
 
 // A failed save must not stand between a patient and their prescription.
@@ -810,7 +826,7 @@ m = mount(defaultConfig(), {
 await act(async () => {
   rxBtn(m).dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
 });
-check('a failed save still opens the prescription', /Prescription/i.test(m.text()));
+check('a failed save still opens the prescription', !!m.host.querySelector('[aria-label="Close"]'));
 m.unmount();
 
 // Nothing should fire twice while a save is in flight.
@@ -818,6 +834,108 @@ m = mount(defaultConfig(), { cform: { ...baseCform(), diagnosis: 'X' }, props: {
 check('the button is disabled while a save is already running', rxBtn(m).disabled === true);
 m.unmount();
 
+/* ══ Save only what has changed, and never twice at once ══════════════
+   Generating a prescription saves the form, so by the time the doctor closes
+   the pop-up the record is usually already written. Save and Next should then
+   just move on. Two overlapping saves are not merely two sheet writes: each
+   calls upsertAppointment, and two concurrent calls both find no existing row,
+   both create one and both send the patient a confirmation. */
+
+const saveBtn = (mm) => [...mm.host.querySelectorAll('button')]
+  .find((b) => /Save and Next|Saving/.test(b.textContent || ''));
+
+// A mount whose save handler reports back, and whose `saving` prop follows it.
+function mountSaving(cform, { onSave } = {}) {
+  const calls = [];
+  const mm = mount(defaultConfig(), {
+    cform,
+    props: { onSaveAndNext: () => { calls.push('save'); return (onSave ? onSave() : Promise.resolve()); } },
+  });
+  return { mm, calls };
+}
+
+// 1. An untouched visit has never been written, so the first save must happen.
+let sc = mountSaving({ ...baseCform(), diagnosis: 'Irreversible pulpitis' });
+clickEl(saveBtn(sc.mm));
+check('the first Save and Next writes the form', sc.calls.length === 1, sc.calls);
+sc.mm.unmount();
+
+// 2. The sequence this is for: generate, then save.
+sc = mountSaving({ ...baseCform(), diagnosis: 'Irreversible pulpitis' });
+clickEl(rxBtn(sc.mm));
+check('generating writes the form', sc.calls.length === 1, sc.calls);
+await act(async () => { await Promise.resolve(); });
+clickEl(saveBtn(sc.mm));
+check('...and Save and Next does NOT write it again', sc.calls.length === 1, sc.calls);
+check('...but still moves to step 2', /Treatment cost/.test(sc.mm.text()));
+sc.mm.unmount();
+
+// 3. Edited after generating — that must be written.
+sc = mountSaving({ ...baseCform(), diagnosis: 'Irreversible pulpitis' });
+clickEl(rxBtn(sc.mm));
+await act(async () => { await Promise.resolve(); });
+const diagInput = [...sc.mm.host.querySelectorAll('input')].find((i) => /Clinical diagnosis/.test(i.placeholder || ''));
+const setVal = Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value').set;
+act(() => { setVal.call(diagInput, 'Acute apical abscess'); diagInput.dispatchEvent(new dom.window.Event('input', { bubbles: true })); });
+clickEl(saveBtn(sc.mm));
+check('an edit after generating IS written', sc.calls.length === 2, sc.calls);
+sc.mm.unmount();
+
+// 4. Generating twice without editing writes once.
+sc = mountSaving({ ...baseCform(), diagnosis: 'X' });
+clickEl(rxBtn(sc.mm));
+await act(async () => { await Promise.resolve(); });
+const closeBtn = sc.mm.host.querySelector('[aria-label="Close"]');
+if (closeBtn) clickEl(closeBtn);
+clickEl(rxBtn(sc.mm));
+check('generating twice with no edit writes once', sc.calls.length === 1, sc.calls);
+sc.mm.unmount();
+
+// 5. A reported failure means the record is not there — write again.
+sc = mountSaving({ ...baseCform(), diagnosis: 'X' });
+clickEl(rxBtn(sc.mm));
+await act(async () => { await Promise.resolve(); });
+sc.mm.update({ error: 'Auto-save failed — your data is still in the form.' });
+clickEl(saveBtn(sc.mm));
+check('after a reported failure the form is written again', sc.calls.length === 2, sc.calls);
+sc.mm.unmount();
+
+/* ── and still no two saves at once ──────────────────────────────────── */
+
+let hang;
+sc = mountSaving({ ...baseCform(), diagnosis: 'X' }, { onSave: () => new Promise((r) => { hang = r; }) });
+clickEl(rxBtn(sc.mm));
+// Edit after generating, so there genuinely is a second write pending.
+const dIn = [...sc.mm.host.querySelectorAll('input')].find((i) => /Clinical diagnosis/.test(i.placeholder || ''));
+act(() => { setVal.call(dIn, 'Edited after generating'); dIn.dispatchEvent(new dom.window.Event('input', { bubbles: true })); });
+sc.mm.update({ saving: true });
+check('Save and Next is blocked while a save it would duplicate is running',
+  saveBtn(sc.mm).disabled === true);
+check('...and says so rather than looking broken', /Saving/.test(saveBtn(sc.mm).textContent || ''));
+clickEl(saveBtn(sc.mm));
+check('...and starts no second save', sc.calls.length === 1, sc.calls);
+hang && hang();
+sc.mm.unmount();
+
+// With nothing left to write, a save in flight blocks nothing: there is no
+// second call to make, so the doctor should not be made to wait.
+sc = mountSaving({ ...baseCform(), diagnosis: 'X' }, { onSave: () => new Promise(() => {}) });
+clickEl(rxBtn(sc.mm));
+sc.mm.update({ saving: true });
+check('an unchanged form can move on mid-save', saveBtn(sc.mm).disabled === false);
+clickEl(saveBtn(sc.mm));
+check('...without a second save', sc.calls.length === 1, sc.calls);
+check('...and it does reach step 2', /Treatment cost/.test(sc.mm.text()));
+sc.mm.unmount();
+
+// Opening a different visit starts from nothing written.
+sc = mountSaving({ ...baseCform(), diagnosis: 'X' });
+clickEl(rxBtn(sc.mm));
+await act(async () => { await Promise.resolve(); });
+sc.mm.update({ cur: { visitId: 'P0002_1', name: 'Someone Else', mobile: '9110968006', date: '2026-10-20' } });
+clickEl(saveBtn(sc.mm));
+check('a different visit is written even if the form looks the same', sc.calls.length === 2, sc.calls);
+sc.mm.unmount();
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

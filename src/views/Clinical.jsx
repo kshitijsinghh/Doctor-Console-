@@ -10,7 +10,7 @@ import NextAppointmentNotice from '../whatsapp/NextAppointmentNotice';
 import { useIsPhone, toMinutes } from '../whatsapp/ui';
 import { anyHealthDetails, hasRealAllergy, healthRows } from '../health';
 import { useFormConfig } from '../settings/FormConfigContext';
-import { fieldVisible, enabledValues, valuesForVisit, medToRow, newMedicinesFrom, hasClinicalContent } from '../settings/formConfig';
+import { fieldVisible, enabledValues, valuesForVisit, medToRow, newMedicinesFrom, hasClinicalContent, formFingerprint } from '../settings/formConfig';
 import MedicinePicker from '../settings/MedicinePicker';
 
 // Rasterize a server-generated HTML document (fetched from its URL) into a jsPDF instance.
@@ -1193,6 +1193,36 @@ export default function Clinical({
   // the letterhead and the patient's name is not a prescription.
   const rxReady = hasClinicalContent(cform);
 
+  // What the form looked like when a save was last asked for.
+  //
+  // Generating a prescription saves the form, so by the time the doctor closes
+  // the pop-up and reaches for Save and Next the record is usually already
+  // written. Re-sending it would not just be a wasted sheet write: every save
+  // also calls upsertAppointment, and a second one is a second chance for the
+  // patient to be sent the same confirmation.
+  //
+  // Null means "nothing written yet", which is where an untouched visit
+  // starts: the form is loaded from the sheet, but assuming it matches what
+  // is stored would skip the one save that matters.
+  // State, not a ref: `dirty` is read during render to decide whether a button
+  // is live, and writing a ref does not re-render — so clearing it on an error
+  // or a visit change left the buttons deciding from a stale answer.
+  const [savedSnap, setSavedSnap] = useState(null);
+  useEffect(() => { setSavedSnap(null); }, [cur.visitId]);
+  // A reported failure means what we thought we wrote is not there.
+  useEffect(() => { if (error) setSavedSnap(null); }, [error]);
+
+  const dirty = formFingerprint(cform) !== savedSnap;
+  // Only a save we would have to duplicate blocks a button. With nothing left
+  // to write, both buttons stay live even while a save is in flight.
+  const saveBlocked = saving && dirty;
+
+  function saveIfDirty() {
+    if (!dirty || !onSaveAndNext) return;
+    setSavedSnap(formFingerprint(cform));
+    Promise.resolve(onSaveAndNext()).catch(() => {});
+  }
+
   const medicines = cform.medicines || [];
   const paySplits = cform.paySplits || [];
   const documents = cform.documents || [];
@@ -1657,17 +1687,17 @@ export default function Clinical({
                   Add medicine
                 </button>
                 )}
-                {/* Saving first is the whole point: a prescription gets
-                    generated, sent and forgotten, and the visit was never
-                    written. The sheet opens either way — a failed sheet write
-                    must not stand between a patient and their prescription —
-                    and onSaveAndNext puts the error in the form behind it. */}
+                {/* The save and the pop-up start together, not one after the
+                    other. A prescription gets generated, sent and forgotten
+                    and the visit is never written, so the save has to happen —
+                    but the sheet is rendered from the form in front of us and
+                    never needed the write to finish. Awaiting it only put an
+                    Apps Script round trip between the click and the
+                    prescription; a failure surfaces in the form behind the
+                    pop-up either way, which is not sooner for having waited. */}
                 <button
-                  onClick={async () => {
-                    if (onSaveAndNext) { try { await onSaveAndNext(); } catch { /* reported in the form */ } }
-                    setRxOpen(true);
-                  }}
-                  disabled={saving || !rxReady}
+                  onClick={() => { saveIfDirty(); setRxOpen(true); }}
+                  disabled={saveBlocked || !rxReady}
                   title={rxReady ? 'Saves the form, then opens the prescription' : 'Fill in the form first — there is nothing to put on a prescription yet'}
                   style={{ padding: '10px 16px', borderRadius: 10, border: '1px solid ' + (rxReady ? '#cfe3df' : '#e4edeb'), background: rxReady ? '#fff' : '#f2f7f6', color: rxReady ? '#0e756c' : '#a8bdb9', fontWeight: 700, fontSize: 13.5, cursor: (saving || !rxReady) ? 'not-allowed' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: 7 }}>
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7z"/><path d="M14 2v5h5M9 13h6M9 17h4"/></svg>
@@ -1676,7 +1706,19 @@ export default function Clinical({
               </div>
               {/* Save and Next CTA (step 1 only) */}
               <div style={{ display: 'flex', gap: 12, marginTop: 22, justifyContent: 'flex-end' }}>
-                <button onClick={() => { if (onSaveAndNext) onSaveAndNext(); setStep(2); scrollToTop(); }} style={{ padding: '11px 22px', borderRadius: 10, border: 0, background: '#0e756c', color: '#fff', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>Save and Next →</button>
+                {/* Disabled while a save is running, which Generate
+                    e-prescription can also start. Two overlapping saves are
+                    not merely two sheet writes: each one calls
+                    upsertAppointment, and two concurrent calls both find no
+                    existing row, both create one and both send the patient a
+                    confirmation. Step 2's Save already guards this way. */}
+                <button
+                  onClick={() => { saveIfDirty(); setStep(2); scrollToTop(); }}
+                  disabled={saveBlocked}
+                  style={{ padding: '11px 22px', borderRadius: 10, border: 0, background: saveBlocked ? '#b8d0cd' : '#0e756c', color: '#fff', fontWeight: 700, fontSize: 14, cursor: saveBlocked ? 'not-allowed' : 'pointer' }}
+                >
+                  {saveBlocked ? 'Saving…' : 'Save and Next →'}
+                </button>
               </div>
             </>
           )}
