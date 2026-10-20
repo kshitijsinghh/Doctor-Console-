@@ -722,6 +722,49 @@ if (chipX) {
 }
 m.unmount();
 
+/* ══ The way out of the form must survive every configuration ═════════
+   Twice now a field guard has swallowed something that is not a field:
+   Comments, which shares a grid with Follow-up, and then Save and Next,
+   which sits in the same fragment as the prescription section. This checks
+   the whole class rather than the two cases that happened to be noticed. */
+
+const OPTIONAL = ['medicalHistory', 'description', 'diagnosis', 'advised', 'investigation',
+  'treatment', 'treatmentGroup', 'medicine', 'followUp', 'lab', 'documents', 'comments'];
+
+for (const key of OPTIONAL) {
+  const only = mount(setField(defaultConfig(), key, false));
+  check('with ' + key + ' off, step 1 still offers Save and Next',
+    /Save and Next/.test(only.text()), only.text().slice(-120));
+  only.unmount();
+}
+
+let allOff2 = defaultConfig();
+OPTIONAL.forEach((k) => { allOff2 = setField(allOff2, k, false); });
+m = mount(allOff2);
+check('with every optional field off, Save and Next is still there', /Save and Next/.test(m.text()));
+check('...and an e-prescription can still be generated', /Generate e-prescription/.test(m.text()));
+m.gotoStep2();
+check('...and step 2 still offers Save record', /Save record|Save/.test(m.text()));
+check('...and Cancel', /Cancel/.test(m.text()));
+m.unmount();
+
+/* ══ Switching off the prescription hides only the prescription ═══════ */
+
+m = mount(setField(defaultConfig(), 'medicine', false));
+check('the prescription section goes', !/Prescribed medicine/.test(m.text()));
+check('...and so does Add medicine', !/Add medicine/.test(m.text()));
+// The sheet prints chief complaint, diagnosis, treatment and advice too, so
+// it is not the prescription section's to take away.
+check('...but the e-prescription button stays', /Generate e-prescription/.test(m.text()));
+check('...and Save and Next stays', /Save and Next/.test(m.text()));
+m.unmount();
+
+m = mount(defaultConfig());
+check('with the prescription on, everything is present',
+  /Prescribed medicine/.test(m.text()) && /Add medicine/.test(m.text())
+  && /Generate e-prescription/.test(m.text()) && /Save and Next/.test(m.text()));
+m.unmount();
+
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

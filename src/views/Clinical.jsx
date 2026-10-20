@@ -1567,8 +1567,14 @@ export default function Clinical({
           </div>
 
           {/* ── Prescribed medicine ── */}
-          {showField('medicine') && !readOnly && (
+          {!readOnly && (
             <>
+              {/* Only the prescription section is configurable. The buttons
+                  below it are not: Save and Next is the only way out of step 1,
+                  and an e-prescription prints the chief complaint, diagnosis,
+                  treatment and advice as well as any medicines. */}
+              {showField('medicine') && (
+              <>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, margin: '24px 0 12px' }}>
                 <h3 style={h3Style}>Prescribed medicine</h3>
               </div>
@@ -1638,11 +1644,15 @@ export default function Clinical({
                   ))}
                 </div>
               )}
+              </>
+              )}
               <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginTop: 12 }}>
+                {showField('medicine') && (
                 <button onClick={addMedicine} style={{ padding: '10px 16px', borderRadius: 10, border: '1px dashed #cfe3df', background: '#f7fbfa', color: '#0e756c', fontWeight: 700, fontSize: 13.5, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 7 }}>
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round"><path d="M12 5v14M5 12h14"/></svg>
                   Add medicine
                 </button>
+                )}
                 <button onClick={() => setRxOpen(true)} style={{ padding: '10px 16px', borderRadius: 10, border: '1px solid #cfe3df', background: '#fff', color: '#0e756c', fontWeight: 700, fontSize: 13.5, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 7 }}>
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7z"/><path d="M14 2v5h5M9 13h6M9 17h4"/></svg>
                   Generate e-prescription
