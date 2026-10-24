@@ -4,12 +4,13 @@
 // about the same appointment and splitting them would mean passing the
 // appointment through three components to say one thing.
 
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
-  apptLook, firstName, replyPill, replySub, waBlock,
+  apptLook, firstName, notifChip, notifLabel, notifSummary, replyPill, replySub, waBlock,
   APPT_CANT, APPT_COMING, APPT_FAILED, APPT_NOT_SENT, APPT_OFF,
 } from '../statusModel';
 import { WaGlyph, Spinner, fmtClock, fmtDay, fmtMin, toTimeInput, toMinutes } from '../ui';
+import { appointmentNotifications } from '../waApi';
 
 function TrashIcon({ color = '#c0392b', size = 15 }) {
   return (
@@ -93,6 +94,102 @@ export function fitTop(anchorTop, panelHeight, viewportHeight, gap = 12) {
   const want = Math.max(gap, anchorTop || 80);
   const highest = Math.max(gap, viewportHeight - panelHeight - gap);
   return Math.min(want, highest);
+}
+
+// Every message sent for this appointment, with what became of each.
+//
+// Collapsed by default. The pop-up's job is the next decision — reschedule or
+// cancel — and a list of four delivery receipts above those two buttons
+// pushes them off a phone screen. Opening it is the deliberate act of asking
+// "what have we actually sent this person?".
+//
+// Fetched on expand, not on mount: most pop-ups are opened to reschedule, and
+// a request per event click would be a request nobody reads.
+function MessageHistory({ appointmentId, sentCount }) {
+  const [open, setOpen] = useState(false);
+  const [rows, setRows] = useState(null);
+  const [err, setErr] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  // A different appointment is a different history. Without this, opening one
+  // event after another shows the first one's messages under the second
+  // one's name until the fetch lands.
+  useEffect(() => { setOpen(false); setRows(null); setErr(''); }, [appointmentId]);
+
+  function toggle() {
+    const next = !open;
+    setOpen(next);
+    if (!next || rows || loading) return;
+    setLoading(true);
+    appointmentNotifications(appointmentId)
+      .then((list) => { setRows(list || []); setErr(''); })
+      .catch((e) => setErr(e && e.message ? e.message : 'Could not load the message history.'))
+      .finally(() => setLoading(false));
+  }
+
+  return (
+    <div style={{ padding: '0 18px', marginTop: 12 }}>
+      <button
+        onClick={toggle}
+        aria-expanded={open}
+        style={{
+          width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          gap: 8, padding: '9px 12px', borderRadius: 10, border: '1px solid #e3eeec',
+          background: '#f7fbfa', cursor: 'pointer', textAlign: 'left',
+        }}
+      >
+        <span style={{ fontSize: 12.5, fontWeight: 700, color: '#0e3b39' }}>
+          {rows ? notifSummary(rows) : (sentCount ? notifSummary(new Array(sentCount).fill({})) : 'Message history')}
+        </span>
+        <span style={{ fontSize: 11, color: '#5c7a76', fontWeight: 700 }}>{open ? 'Hide' : 'Show'}</span>
+      </button>
+
+      {open && (
+        <div style={{ marginTop: 8 }}>
+          {loading && (
+            <p style={{ fontSize: 12, color: '#7a9994', display: 'flex', alignItems: 'center', gap: 7 }}>
+              <Spinner size={12} /> Loading…
+            </p>
+          )}
+          {!loading && err && (
+            <p style={{ fontSize: 12, color: '#c0392b', fontWeight: 600 }}>{err}</p>
+          )}
+          {!loading && !err && rows && rows.length === 0 && (
+            <p style={{ fontSize: 12, color: '#7a9994' }}>Nothing has been sent for this appointment yet.</p>
+          )}
+          {!loading && !err && (rows || []).map((n, i) => {
+            const chip = notifChip(n.status);
+            return (
+              <div
+                key={i}
+                style={{
+                  display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10,
+                  padding: '8px 2px', borderTop: i ? '1px solid #eef4f3' : 0,
+                }}
+              >
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 12.5, fontWeight: 700, color: '#0e3b39' }}>{notifLabel(n.useCase)}</div>
+                  <div style={{ fontSize: 11.5, color: '#7a9994', marginTop: 2 }}>
+                    {n.sentAt ? fmtClock(n.sentAt) : '—'}
+                    {n.reply ? ' · replied ' + n.reply : ''}
+                  </div>
+                  {n.status === 'Not delivered' && n.errorTitle && (
+                    <div style={{ fontSize: 11.5, color: '#b03a2e', marginTop: 2 }}>{n.errorTitle}</div>
+                  )}
+                </div>
+                <span style={{
+                  flex: '0 0 auto', padding: '2px 9px', borderRadius: 100, fontSize: 11,
+                  fontWeight: 700, background: chip.bg, color: chip.ink,
+                }}>
+                  {n.status}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function EventPopover({
@@ -260,6 +357,8 @@ export default function EventPopover({
             </p>
           </div>
         </div>
+
+        <MessageHistory appointmentId={ev.appointmentId} sentCount={(ev.reminders || []).length} />
 
         {error && (
           <p style={{ padding: '10px 18px 0', fontSize: 12.5, color: '#c0392b', fontWeight: 600 }}>{error}</p>

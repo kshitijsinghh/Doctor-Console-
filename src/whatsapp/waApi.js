@@ -181,6 +181,17 @@ export function sendMessage({ useCase, patientId, visitId, mobile, name, params,
   }, { op: 'sendMessage' });
 }
 
+// Every WhatsApp message sent for one appointment, each with its current
+// delivery status. Fetched when the pop-up opens rather than carried on the
+// calendar payload: a status changes after the send, so a copy taken at
+// render time would be stale by the time anyone read it.
+export function appointmentNotifications(appointmentId) {
+  return waFetch(
+    '/whatsapp/appointments/' + encodeURIComponent(appointmentId) + '/notifications' + qs({ clinicId: CLINIC_ID }),
+    undefined, { op: 'appointmentNotifications' },
+  ).then((j) => j.notifications || []);
+}
+
 export function getMessage(messageId) {
   return waFetch('/whatsapp/messages/' + encodeURIComponent(messageId) + qs({ clinicId: CLINIC_ID }),
     undefined, { op: 'getMessage' });

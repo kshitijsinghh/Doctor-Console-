@@ -29,7 +29,7 @@ export default function NextAppointmentNotice({ patientName, mobile, date, time,
     text = name + ' has WhatsApp turned off — please tell them the date before they leave.';
   } else if (min == null) {
     text = name + ' will get a WhatsApp confirmation for ' + when
-      + ' when you save. Add a time and the reminder can go out the day before.';
+      + ' when you save. Add a time and the reminder can go out on the day.';
   } else if (prevDate && (prevDate !== date || toMinutes(prevTime) !== min)) {
     // Amber: this is not a new appointment, it is a correction, and a patient
     // has already been told something else.
@@ -40,7 +40,7 @@ export default function NextAppointmentNotice({ patientName, mobile, date, time,
     tone = '#8a4f0b'; bg = '#fff8ec'; bd = '#f0dcb8';
   } else {
     text = name + ' will get a WhatsApp confirmation for ' + when
-      + ' when you save, and a reminder the day before.';
+      + ' when you save, and a reminder on the day.';
   }
 
   return (

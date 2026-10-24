@@ -282,7 +282,7 @@ export default function BookingPanel({
                 {waOff
                   ? first + ' has WhatsApp turned off — call to confirm this time.'
                   : first + ' will get a WhatsApp confirmation for ' + fmtDay(d.date) + ', ' + fmtMin(d.start)
-                    + ' when you save, and a reminder the day before.'}
+                    + ' when you save, and a reminder on the day.'}
               </span>
             </p>
           )}

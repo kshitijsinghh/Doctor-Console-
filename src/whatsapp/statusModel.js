@@ -158,7 +158,7 @@ export function waBlock(status, first, sentAt) {
     notsent: ['Confirmation not sent yet', 'Nothing has gone to ' + first + ' on WhatsApp for this appointment.', '#0e3b39'],
     failed: ["Couldn't deliver", "Number isn't on WhatsApp — call " + first + ' to confirm.', '#8a4f0b'],
     off: ['WhatsApp off', first + ' has turned off WhatsApp messages — call to confirm.', '#5c7a76'],
-    sent: ['Confirmation delivered', 'Sent ' + at + ' · reminder goes out the day before', '#0e3b39'],
+    sent: ['Confirmation delivered', 'Sent ' + at + ' · reminder goes out on the day', '#0e3b39'],
     seen: ['Confirmation seen', 'Sent ' + at + ' · ' + first + ' has opened it', '#0e3b39'],
     coming: ['Confirmation seen', 'Sent ' + at, '#0e3b39'],
     cant: ['Confirmation seen', 'Sent ' + at, '#0e3b39'],
@@ -176,4 +176,45 @@ export function replySub(status, first, repliedAt, changed) {
 
 export function firstName(name) {
   return String(name || '').trim().split(/\s+/)[0] || 'the patient';
+}
+
+/* ── The message history inside the event pop-up ──────────────────────── */
+
+// What each message was, in the clinic's words rather than the backend's.
+//
+// APPOINTMENT_REMINDER is the retired day-before reminder. Rows sent before
+// the schedule changed still carry it, so it keeps a label — dropping it
+// would show a blank line against a message the clinic really did send.
+const NOTIF_LABELS = {
+  APPOINTMENT_CONFIRMATION: 'Booking confirmation',
+  APPOINTMENT_RESCHEDULED: 'New time sent',
+  APPOINTMENT_CANCELLED: 'Cancellation notice',
+  APPOINTMENT_REMINDER_TODAY: 'Reminder',
+  APPOINTMENT_REMINDER_UNCONFIRMED: 'Reminder · asked again',
+  APPOINTMENT_REMINDER: 'Reminder (day before)',
+};
+
+export function notifLabel(useCase) {
+  return NOTIF_LABELS[String(useCase || '').toUpperCase()] || 'Message';
+}
+
+// The colour of the little status chip. Deliberately the same four words the
+// Messages tab uses — "Seen", "Delivered", "Sent", "Not delivered" — because
+// reception reads both screens and two vocabularies for one fact is how a
+// delivered message gets chased as a missing one.
+export function notifChip(status) {
+  const s = String(status || '');
+  if (s === 'Not delivered') return { bg: '#fdecea', ink: '#b03a2e' };
+  if (s === 'Seen') return { bg: '#e6f4ea', ink: '#1e6b40' };
+  if (s === 'Delivered') return { bg: '#eef6f5', ink: '#0e3b39' };
+  return { bg: '#f3f6f6', ink: '#5c7a76' };
+}
+
+// One line summarising what went out, for the collapsed header.
+export function notifSummary(list) {
+  const n = (list || []).length;
+  if (!n) return 'No messages sent yet';
+  const replied = (list || []).filter((x) => x.reply).length;
+  const base = n === 1 ? '1 message sent' : n + ' messages sent';
+  return replied ? base + ' · ' + replied + ' replied' : base;
 }
