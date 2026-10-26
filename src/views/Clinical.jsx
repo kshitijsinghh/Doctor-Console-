@@ -1246,21 +1246,30 @@ export default function Clinical({
   // are added to it once the VISIT has saved — never before, so a library
   // write can neither delay nor fail the thing the doctor came to do.
   //
-  // savedFlash is the only success signal available here: App sets it after
-  // saveClinical resolves and clears it again before navigating away.
+  // The signal is `saving` falling back to false with no error, NOT savedFlash.
+  // savedFlash is set by the final Save on step 2 alone, and the medicines are
+  // on step 1 — so keying on it meant a doctor who wrote a prescription and
+  // pressed "Save and Next" had the visit saved and the medicine quietly
+  // forgotten. The prescription auto-save runs through the same handler and
+  // was equally silent.
+  //
+  // Every save path sets `saving` true and then false, so this covers all of
+  // them, including any added later.
+  const wasSaving = useRef(false);
   useEffect(() => {
-    if (!savedFlash || readOnly) return;
+    const falling = wasSaving.current && !saving;
+    wasSaving.current = saving;
+    if (!falling) return;
+    // A save that failed has not stored the prescription, so there is nothing
+    // to learn from. App clears the error at the start of every save and sets
+    // it in the same batch that clears `saving`, so this is settled by now.
+    if (error || readOnly) return;
     const fresh = newMedicinesFrom(cform.medicines, medLibrary);
     // Fire and forget, and explicitly so. addMedicines already swallows a
     // failure per medicine, but an unguarded call here would turn any future
     // change to it into an unhandled rejection in the doctor's console.
     if (fresh.length) addMedicines(fresh).catch(() => {});
-    // Deliberately keyed on savedFlash alone. It goes false→true exactly once
-    // per successful save, so the effect runs once however many times the form
-    // re-renders while the flash is showing. Should that ever change, the
-    // server refuses a medicine whose name is already in the library, so the
-    // worst case is a wasted request rather than a duplicated record.
-  }, [savedFlash]);   // eslint-disable-line react-hooks/exhaustive-deps
+  }, [saving, error]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ── Medicine handlers ── */
   function addMedicine() { onSetField('medicines', [...medicines, { name: '', unit: 'Tablet', morning: false, afternoon: false, evening: false, night: false, food: 'After Food', duration: '' }]); }

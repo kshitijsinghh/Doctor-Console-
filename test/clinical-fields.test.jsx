@@ -334,6 +334,14 @@ function learner() {
 
 const rxRow = (name) => ({ name, unit: 'Tablet', morning: true, afternoon: false, evening: false, night: true, food: 'After Food', duration: '3', remarks: 'Only if in pain' });
 
+// A save, as the form actually experiences one: `saving` goes true while the
+// request is in flight and false when it settles.
+//
+// These used to set savedFlash directly, which is why they all passed while
+// the feature was broken: savedFlash is set only by the final Save on step 2,
+// and the medicines are on step 1. Driving the real signal is the point.
+const save = (mm, extra = {}) => { mm.update({ saving: true, ...extra }); mm.update({ saving: false, ...extra }); };
+
 let L = learner();
 m = mount(defaultConfig(), {
   medicines: LIBRARY,
@@ -341,17 +349,55 @@ m = mount(defaultConfig(), {
   addMedicines: L.fn,
 });
 check('nothing is learned before the visit saves', L.calls.length === 0);
-m.update({ savedFlash: true });
-check('a medicine not in the library is learned once the visit saves',
+// No savedFlash anywhere here — this is "Save and Next", the button the
+// doctor actually presses after writing a prescription.
+save(m);
+check('a medicine is learned on Save and Next, with no savedFlash',
   L.calls.length === 1 && L.calls[0][0].name === 'Ketorolac 10mg', L.calls);
 check('...carrying the whole row, not just the name',
   L.calls[0][0].duration === '3' && L.calls[0][0].remarks === 'Only if in pain'
   && L.calls[0][0].night === true, L.calls[0][0]);
-// savedFlash stays true for ~900ms and the form re-renders in that window;
-// the effect is keyed on the flag alone so it runs once, not once per render.
-m.update({ savedFlash: true, saving: false });
-m.update({ savedFlash: true, error: '' });
-check('...once, however many times the form re-renders meanwhile', L.calls.length === 1, L.calls.length);
+// The form re-renders repeatedly after a save; learning must not repeat.
+m.update({ error: '' });
+m.update({ savedFlash: true });
+check('...once, however many times the form re-renders afterwards', L.calls.length === 1, L.calls.length);
+m.unmount();
+
+// The final Save on step 2 must still learn — the path that did work before.
+L = learner();
+m = mount(defaultConfig(), {
+  medicines: LIBRARY,
+  cform: { ...baseCform(), medicines: [rxRow('Ketorolac 10mg')] },
+  addMedicines: L.fn,
+});
+save(m, { savedFlash: true });
+check('the final Save still learns', L.calls.length === 1, L.calls);
+m.unmount();
+
+// Two saves in one sitting: the doctor adds a second medicine and saves again.
+L = learner();
+m = mount(defaultConfig(), {
+  medicines: LIBRARY,
+  cform: { ...baseCform(), medicines: [rxRow('Ketorolac 10mg')] },
+  addMedicines: L.fn,
+});
+save(m);
+m.update({ cform: { ...baseCform(), medicines: [rxRow('Ketorolac 10mg'), rxRow('Pantoprazole 40mg')] } });
+save(m);
+check('a second save learns the medicine added since the first',
+  L.calls.length === 2 && L.calls[1].some((x) => x.name === 'Pantoprazole 40mg'), L.calls);
+m.unmount();
+
+// A save that failed stored nothing, so there is nothing to learn from.
+L = learner();
+m = mount(defaultConfig(), {
+  medicines: LIBRARY,
+  cform: { ...baseCform(), medicines: [rxRow('Ketorolac 10mg')] },
+  addMedicines: L.fn,
+});
+m.update({ saving: true });
+m.update({ saving: false, error: 'Something went wrong, please try again' });
+check('a failed save teaches nothing', L.calls.length === 0, L.calls);
 m.unmount();
 
 L = learner();
@@ -360,7 +406,7 @@ m = mount(defaultConfig(), {
   cform: { ...baseCform(), medicines: [rxRow('Amoxicillin 500mg')] },
   addMedicines: L.fn,
 });
-m.update({ savedFlash: true });
+save(m);
 check('a medicine already in the library is not learned again', L.calls.length === 0, L.calls);
 m.unmount();
 
@@ -370,7 +416,7 @@ m = mount(defaultConfig(), {
   cform: { ...baseCform(), medicines: [rxRow('')] },
   addMedicines: L.fn,
 });
-m.update({ savedFlash: true });
+save(m);
 check('a blank row teaches nothing', L.calls.length === 0);
 m.unmount();
 
@@ -382,7 +428,7 @@ m = mount(defaultConfig(), {
   addMedicines: L.fn,
   props: { readOnly: true },
 });
-m.update({ savedFlash: true, readOnly: true });
+save(m, { readOnly: true });
 check('a read-only view never writes to the library', L.calls.length === 0);
 m.unmount();
 
@@ -393,7 +439,7 @@ m = mount(defaultConfig(), {
   addMedicines: async () => { throw new Error('network'); },
 });
 let threw = false;
-try { m.update({ savedFlash: true }); } catch { threw = true; }
+try { save(m); } catch { threw = true; }
 check('a failing library write does not break the saved form', !threw);
 m.unmount();
 
@@ -465,7 +511,8 @@ check('the console loads its settings at boot',
 const before = http.filter((c) => c.url.includes('/medicines')).length;
 check('nothing is posted to the library before the visit saves', before === 0, before);
 
-real.update({ savedFlash: true });
+real.update({ saving: true });
+real.update({ saving: false });
 await settle();
 
 const posts = http.filter((c) => c.method === 'POST' && c.url.includes('/medicines'));
@@ -501,7 +548,8 @@ global.fetch = (function (inner) {
 
 const real2 = mountReal({ ...baseCform(), medicines: [realRow] });
 await settle();
-real2.update({ savedFlash: true });
+real2.update({ saving: true });
+real2.update({ saving: false });
 await settle();
 check('a medicine already in the library is not posted again',
   http.filter((c) => c.method === 'POST' && c.url.includes('/medicines')).length === 0,
