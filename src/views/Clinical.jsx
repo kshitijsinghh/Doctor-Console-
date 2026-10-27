@@ -4,6 +4,7 @@ import {
   MEDICINE_FORMS, FOOD_OPTIONS, DOC_KINDS, SPLIT_CATEGORIES, FDI_QUADRANTS, FDI_PRIMARY_QUADRANTS,
 } from '../options';
 import { TOUCH_BTN, FLUID_GRID_2COL } from '../styles';
+import ConsentBar from '../consents/ConsentBar';
 import { getUploadUrl, uploadToS3, getDocumentUrl, generatePrescriptionPdf, generateReceiptPdf, savePayment, getClinicId, logEvent } from '../api';
 import { DocPopupHeader, PhoneActionBar, SendStrip, useDocSend } from '../whatsapp/DocSend';
 import NextAppointmentNotice from '../whatsapp/NextAppointmentNotice';
@@ -1524,6 +1525,23 @@ export default function Clinical({
           })()}
         </div>
       )}
+
+      {/* ── Consent forms ──
+          Above the step switcher so it is visible on both steps. Renders
+          nothing when the clinic has no consent templates. */}
+      <div style={{ marginTop: 16 }}>
+        <ConsentBar
+          visit={cur.visitId}
+          patient={{
+            patientId: cur.patientId, name: cur.name, mobile: cur.mobile,
+            age: cur.age, gender: cur.gender, whatsappOff: cur.whatsappOff,
+          }}
+          treatments={[].concat(cform.treatment || [], cform.advisedTreatment || []).filter(Boolean)}
+          doctorName={doctorName || ''}
+          clinicName={clinicName || ''}
+          readOnly={readOnly}
+        />
+      </div>
 
       {/* ── Step switcher ── */}
       {!readOnly && (

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import Header from './components/Header';
 import DoctorFormSettings from './settings/DoctorFormSettings';
 import { FormConfigProvider } from './settings/FormConfigContext';
+import { ConsentsProvider } from './consents/ConsentsContext';
 import Dashboard from './views/Dashboard';
 import Intake from './views/Intake';
 import Clinical from './views/Clinical';
@@ -884,6 +885,7 @@ export default function App({ user, onLogout }) {
   return (
     <WaProvider org={org} orgLoaded={orgLoaded}>
     <FormConfigProvider>
+    <ConsentsProvider visitId={curVisitId}>
     <div style={{ minHeight: '100vh' }}>
       <Header view={view} onGoDash={goDash} onGoAppts={goAppts} onGoPatients={goPatients} onGoMessages={goMessages} onGoSettings={goSettings} user={user} onLogout={onLogout} />
       <main style={{ maxWidth: 1180, margin: '0 auto', padding: '26px 22px 60px' }}>
@@ -1005,6 +1007,7 @@ export default function App({ user, onLogout }) {
         </div>
       )}
     </div>
+    </ConsentsProvider>
     </FormConfigProvider>
     </WaProvider>
   );
