@@ -135,6 +135,22 @@ const list = [
   consent({ consentId: 'a', sentAt: iso(-120) }),
   consent({ consentId: 'b', templateId: 't_la', sentAt: iso(-10), status: 'signed', signedAt: iso(-5) }),
 ];
+// ConsentBar reads the real clock (`Date.now()`), so the fixtures it is
+// mounted with have to be relative to now. The pure functions above take
+// NOW as an argument and stay on the frozen clock, which keeps them
+// deterministic — but a component fixture pinned to a frozen NOW silently
+// becomes "expired" once that date passes, and the render tests start
+// failing on a date unrelated to any change. Which is exactly what happened.
+const rNow = Date.now();
+const rIso = (offsetMin) => new Date(rNow + offsetMin * 60000).toISOString();
+const liveList = [
+  consent({ consentId: 'a', sentAt: rIso(-120), expiresAt: rIso(+450) }),
+  consent({
+    consentId: 'b', templateId: 't_la', sentAt: rIso(-10),
+    status: 'signed', signedAt: rIso(-5), expiresAt: rIso(+450),
+  }),
+];
+
 const r = M.consentRows(list, byId, NOW, { time: () => '3:30 pm', when: () => 'Today, 3:35 pm' });
 check('rows are newest first', r[0].id === 'b', r.map((x) => x.id));
 check('a row takes its title from the template', r[0].title === 'Local anaesthesia consent', r[0].title);
@@ -189,7 +205,7 @@ check('...and starts collapsed',
   container.querySelector('[aria-expanded]').getAttribute('aria-expanded') === 'false');
 unmount();
 
-mount({ templates: [TPL, TPL2], templatesById: byId, enabled: true, consents: list });
+mount({ templates: [TPL, TPL2], templatesById: byId, enabled: true, consents: liveList });
 check('chips show once forms exist', /1 signed/.test(container.textContent) && /1 waiting/.test(container.textContent));
 check('the sent forms are hidden until expanded', !/Local anaesthesia consent/.test(container.textContent));
 act(() => { container.querySelector('[aria-expanded]').dispatchEvent(new dom.window.Event('click', { bubbles: true })); });
@@ -209,7 +225,7 @@ check('"Not needed" dismisses it', !/Suggested for/.test(container.textContent))
 unmount();
 
 // A past visit is read-only: nothing that writes may be offered.
-mount({ templates: [TPL], templatesById: byId, enabled: true, consents: list }, { readOnly: true });
+mount({ templates: [TPL], templatesById: byId, enabled: true, consents: liveList }, { readOnly: true });
 check('a read-only visit still shows the bar', /Consent forms/.test(container.textContent));
 check('...but offers no Send button', !/Send consent form/.test(container.textContent));
 act(() => { container.querySelector('[aria-expanded]').dispatchEvent(new dom.window.Event('click', { bubbles: true })); });
