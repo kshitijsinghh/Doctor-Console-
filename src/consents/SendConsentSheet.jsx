@@ -75,6 +75,10 @@ export default function SendConsentSheet({
       const saved = await sendConsent({
         visitId: visit,
         patientId: patient && patient.patientId,
+        // The number the link goes to. The API will not create a consent
+        // without it, so it has to travel with the request and not just be
+        // shown in the header of this sheet.
+        mobile: (patient && patient.mobile) || '',
         templateId: template.templateId,
         title: template.title,
         // The snapshot the patient will read, rendered here so that what was

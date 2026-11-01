@@ -44,11 +44,15 @@ export function listConsents({ visitId, patientId } = {}) {
 // and stored by the server. Rendering it client-side and sending it means
 // what the doctor previewed is exactly what gets signed — the server does not
 // re-render it from a template that may have been edited in between.
-export function sendConsent({ visitId, patientId, templateId, bodyText, title, treatment, toothNumbers, vals }) {
+// `mobile` is required by the API — it is the number the link is sent to, and
+// createConsent rejects the whole request without it. It was missing from
+// this payload at first, which failed as "The patient has no WhatsApp number
+// on file." while the sheet was displaying that very number on screen.
+export function sendConsent({ visitId, patientId, mobile, templateId, bodyText, title, treatment, toothNumbers, vals }) {
   return waFetch('/consents', {
     method: 'POST',
     body: JSON.stringify({
-      clinicId: CLINIC_ID, visitId, patientId, templateId,
+      clinicId: CLINIC_ID, visitId, patientId, mobile, templateId,
       bodyText, title, treatment, toothNumbers, vals,
     }),
   }, { op: 'sendConsent', meta: { visitId, templateId } }).then((j) => j.consent || null);

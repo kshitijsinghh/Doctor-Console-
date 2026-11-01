@@ -233,5 +233,62 @@ check('...and no Cancel link', !/Cancel link/.test(container.textContent));
 check('...while View PDF stays available', /View PDF/.test(container.textContent));
 unmount();
 
+/* ══ the request the API actually receives ══════════════════════════════
+   The whole suite passed while sendConsent silently dropped `mobile`, and
+   the API answered "The patient has no WhatsApp number on file." for a
+   patient whose number the sheet was displaying on screen. Asserting the
+   rendered output is not enough; the payload leaving the browser has to be
+   checked too. Stubs the network only, so waApi's real code builds the
+   request. */
+dom.window.localStorage.setItem('pp_session', JSON.stringify({
+  accessToken: 'test-token',
+  refreshToken: 'test-refresh',
+  expiresAt: Math.floor(Date.now() / 1000) + 3600,
+  user: { email: 'staff@clinic.test', role: 'staff' },
+}));
+
+let sentUrl = null;
+let sentBody = null;
+global.fetch = async (url, opts = {}) => {
+  sentUrl = String(url);
+  try { sentBody = JSON.parse(opts.body || '{}'); } catch { sentBody = null; }
+  return {
+    ok: true, status: 200,
+    headers: { get: () => 'application/json' },
+    json: async () => ({ ok: true, consent: { consentId: 'c1' } }),
+    text: async () => JSON.stringify({ ok: true, consent: { consentId: 'c1' } }),
+  };
+};
+
+const api = await import('../src/consents/consentsApi.js');
+
+await api.sendConsent({
+  visitId: 'P0001_93',
+  patientId: 'P0001',
+  mobile: '9110968006',
+  templateId: 't_ext',
+  title: 'Tooth extraction consent',
+  bodyText: 'I agree.',
+  treatment: 'Bridge',
+  toothNumbers: '',
+  vals: { patient_name: 'Kshitij New Test' },
+});
+
+check('the send request goes to /consents', /\/consents$/.test(sentUrl), sentUrl);
+check('...and carries the patient mobile', sentBody && sentBody.mobile === '9110968006', sentBody);
+check('...and the clinic id', !!(sentBody && sentBody.clinicId), sentBody && sentBody.clinicId);
+check('...and the visit, patient and template',
+  !!(sentBody && sentBody.visitId === 'P0001_93' && sentBody.patientId === 'P0001'
+    && sentBody.templateId === 't_ext'), sentBody);
+check('...and the rendered snapshot the patient signs',
+  !!(sentBody && sentBody.bodyText === 'I agree.'), sentBody && sentBody.bodyText);
+
+// Every field the sheet collects must survive the trip. A field added to the
+// sheet but forgotten in consentsApi is exactly the bug this guards.
+const REQUIRED = ['clinicId', 'visitId', 'patientId', 'mobile', 'templateId',
+  'bodyText', 'title', 'treatment', 'toothNumbers', 'vals'];
+const absent = REQUIRED.filter((k) => !(sentBody && k in sentBody));
+check('no field the sheet collects is dropped in transit', absent.length === 0, absent);
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
