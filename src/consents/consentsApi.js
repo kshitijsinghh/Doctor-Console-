@@ -48,12 +48,15 @@ export function listConsents({ visitId, patientId } = {}) {
 // createConsent rejects the whole request without it. It was missing from
 // this payload at first, which failed as "The patient has no WhatsApp number
 // on file." while the sheet was displaying that very number on screen.
-export function sendConsent({ visitId, patientId, mobile, templateId, bodyText, title, treatment, toothNumbers, vals }) {
+export function sendConsent({
+  visitId, patientId, patientName, mobile, doctorName,
+  templateId, bodyText, title, treatment, toothNumbers, vals,
+}) {
   return waFetch('/consents', {
     method: 'POST',
     body: JSON.stringify({
-      clinicId: CLINIC_ID, visitId, patientId, mobile, templateId,
-      bodyText, title, treatment, toothNumbers, vals,
+      clinicId: CLINIC_ID, visitId, patientId, patientName, mobile, doctorName,
+      templateId, bodyText, title, treatment, toothNumbers, vals,
     }),
   }, { op: 'sendConsent', meta: { visitId, templateId } }).then((j) => j.consent || null);
 }

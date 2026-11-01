@@ -265,17 +265,23 @@ const api = await import('../src/consents/consentsApi.js');
 await api.sendConsent({
   visitId: 'P0001_93',
   patientId: 'P0001',
+  patientName: 'Kshitij New Test',
   mobile: '9110968006',
+  doctorName: 'Dr. Singh',
   templateId: 't_ext',
   title: 'Tooth extraction consent',
   bodyText: 'I agree.',
   treatment: 'Bridge',
   toothNumbers: '',
-  vals: { patient_name: 'Kshitij New Test' },
+  vals: { patient_name: 'Kshitij New Test', doctor: 'Dr. Singh' },
 });
 
 check('the send request goes to /consents', /\/consents$/.test(sentUrl), sentUrl);
 check('...and carries the patient mobile', sentBody && sentBody.mobile === '9110968006', sentBody);
+// {{patient_name}} in the WhatsApp template comes from this, and an empty one
+// fails the send with "Missing template parameters: patient_name".
+check('...and the patient name', sentBody && sentBody.patientName === 'Kshitij New Test', sentBody && sentBody.patientName);
+check('...and the doctor name', sentBody && sentBody.doctorName === 'Dr. Singh', sentBody && sentBody.doctorName);
 check('...and the clinic id', !!(sentBody && sentBody.clinicId), sentBody && sentBody.clinicId);
 check('...and the visit, patient and template',
   !!(sentBody && sentBody.visitId === 'P0001_93' && sentBody.patientId === 'P0001'
@@ -283,10 +289,12 @@ check('...and the visit, patient and template',
 check('...and the rendered snapshot the patient signs',
   !!(sentBody && sentBody.bodyText === 'I agree.'), sentBody && sentBody.bodyText);
 
-// Every field the sheet collects must survive the trip. A field added to the
-// sheet but forgotten in consentsApi is exactly the bug this guards.
-const REQUIRED = ['clinicId', 'visitId', 'patientId', 'mobile', 'templateId',
-  'bodyText', 'title', 'treatment', 'toothNumbers', 'vals'];
+// This list is every `body.*` that createConsent reads on the server, NOT a
+// list of what the client happens to send today. Deriving it from the latter
+// is how `mobile` and then `patientName` both shipped missing: the assertion
+// agreed with the bug. Keep it in step with consents.mjs:createConsent.
+const REQUIRED = ['clinicId', 'visitId', 'patientId', 'patientName', 'mobile',
+  'doctorName', 'templateId', 'bodyText', 'title', 'treatment', 'toothNumbers', 'vals'];
 const absent = REQUIRED.filter((k) => !(sentBody && k in sentBody));
 check('no field the sheet collects is dropped in transit', absent.length === 0, absent);
 
